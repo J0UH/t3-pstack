@@ -4,7 +4,7 @@
     "pstack": {
       "upstreamPath": "pstack",
       "localPath": "plugins/pstack",
-      "sha": "de2dba6",
+      "sha": "87c8103",
       "exclude": [
         ".cursor-plugin/",
         ".gitignore",
@@ -14,6 +14,7 @@
         "automations/",
         "docs/",
         "skills/make-bot-ui/",
+        "skills/poteto-mode/scripts/check-plan.test.ts",
         "skills/poteto-mode/scripts/worktree-audit.sh"
       ]
     },

@@ -122,7 +122,7 @@
     },
     "plugins/pstack/skills/poteto-mode/scripts/check-plan.mjs": {
       "kind": "port-feature",
-      "why": "Checks for the port's plan skeleton markers (standing orders, installed-plugin reads, an hourly cadence, the configured swarm workers model), requires a box under each program task and under Close the program, tracks code fences by delimiter character and length, and strips a leading byte-order mark before parsing.",
+      "why": "Checks for the port's plan skeleton markers (standing orders, installed-plugin reads, an hourly cadence, the configured swarm workers model), requires a box under each program task and under Close the program, tracks code fences by delimiter character and length at any indentation, so a fence inside a list item counts, and strips a leading byte-order mark before parsing.",
       "since": "0.9.19",
       "upstream": "not-proposed"
     },
@@ -140,7 +140,7 @@
     },
     "plugins/pstack/skills/poteto-mode/scripts/package.json": {
       "kind": "policy",
-      "why": "Typechecks through the root tsconfig.json so the port-only modules are covered.",
+      "why": "Typechecks through the root tsconfig.json so the port-only modules are covered, and leaves upstream's check-plan.test.ts out of the test script because the port excludes that file.",
       "since": "0.9.23",
       "upstream": "not-proposed"
     },
