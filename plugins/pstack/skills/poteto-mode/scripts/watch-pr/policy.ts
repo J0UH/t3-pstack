@@ -3,6 +3,7 @@ import {
   ChecksUnavailable,
   WatcherQueryError,
   resolveChecks,
+  resolveReviewThreads,
 } from "./github.ts";
 import { DeadlineExceeded, type WatchDeadline } from "./deadline.ts";
 import { reviewSettler, settleWait, type ReviewSettler } from "./settle.ts";
@@ -214,7 +215,7 @@ export async function readSnapshot(args: {
   if (facts.state === "CLOSED")
     return { kind: "closed", context: args.context, facts };
   const [threads, checks, settle] = await Promise.all([
-    args.reader.reviewThreads(args.context),
+    resolveReviewThreads(args.reader, args.context),
     resolveChecks(args.reader, args.context),
     args.settler?.(facts) ?? ({ kind: "off" } as const),
   ]);

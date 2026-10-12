@@ -4,22 +4,8 @@ import { DeadlineExceeded, type WatchDeadline } from "./deadline.ts";
 import { readReviewActivity, type ReviewActivity } from "./settle.ts";
 import type * as T from "./types.ts";
 import { nonEmpty, parsePrNumber } from "./types.ts";
-export const REVIEW_THREADS_QUERY = `query ReviewThreads($owner: String!, $repo: String!, $pr: Int!, $after: String) {
-  repository(owner: $owner, name: $repo) {
-    pullRequest(number: $pr) {
-      reviewThreads(first: 100, after: $after) {
-        pageInfo { hasNextPage endCursor }
-        nodes {
-          id
-          isResolved
-          comments(first: 1) {
-            nodes { body createdAt path line author { login } }
-          }
-        }
-      }
-    }
-  }
-}`;
+export const REVIEW_THREADS_QUERY =
+  "\nquery ReviewThreads($owner: String!, $repo: String!, $pr: Int!, $after: String) {\n  repository(owner: $owner, name: $repo) {\n    pullRequest(number: $pr) {\n      reviewThreads(first: 100, after: $after) {\n        pageInfo {\n          hasNextPage\n          endCursor\n        }\n        nodes {\n          id\n          isResolved\n          comments(first: 10) {\n            nodes {\n              body\n              createdAt\n              path\n              line\n              author { login }\n            }\n          }\n        }\n      }\n    }\n  }\n}\n";
 export const PR_COMMIT_STATUS_QUERY =
   "\nquery PrCommitStatuses($owner: String!, $repo: String!, $pr: Int!) {\n  repository(owner: $owner, name: $repo) {\n    pullRequest(number: $pr) {\n      commits(last: 50) {\n        nodes {\n          commit {\n            oid\n            statusCheckRollup {\n              state\n            }\n          }\n        }\n      }\n    }\n  }\n}\n";
 export const PR_FACTS_QUERY = `query PullRequestFacts($owner: String!, $repo: String!, $pr: Int!) {
@@ -431,14 +417,15 @@ function passKey(comment: T.ReviewComment | null): string | null {
   }
   return null;
 }
-export function parseReviewThreads(
-  nodes: readonly unknown[]
-): readonly T.ReviewThread[] {
-  const threads: {
-    readonly id: string;
-    readonly firstComment: T.ReviewComment | null;
-    readonly resolved: boolean;
-  }[] = [];
+export function parseReviewThreadPage(
+  pullRequest: unknown
+): T.ReviewThreadPage {
+  const reviewThreads = record(
+    at(pullRequest, ["reviewThreads"]),
+    "reviewThreads"
+  );
+  const nodes = list(reviewThreads.nodes, "reviewThreads.nodes");
+  const threads: T.RawReviewThread[] = [];
   for (const node of nodes) {
     const thread = record(node, "review thread");
     if (typeof thread.isResolved !== "boolean")
@@ -453,6 +440,19 @@ export function parseReviewThreads(
       resolved: thread.isResolved,
     });
   }
+  const page = record(reviewThreads.pageInfo, "reviewThreads.pageInfo");
+  if (typeof page.hasNextPage !== "boolean")
+    missing("reviewThreads.pageInfo.hasNextPage", page.hasNextPage);
+  return {
+    threads,
+    endCursor: page.hasNextPage
+      ? string(page.endCursor, "reviewThreads.pageInfo.endCursor")
+      : null,
+  };
+}
+export function buildReviewThreads(
+  threads: readonly T.RawReviewThread[]
+): readonly T.ReviewThread[] {
   const keys = new Set<string>();
   let keyless = false;
   for (const thread of threads) {
@@ -705,33 +705,13 @@ export class GhGitHubReader implements T.GitHubReader {
       endCursor: page.hasNextPage && cursor ? cursor : null,
     };
   }
-  async reviewThreads(
-    context: T.PrContext
-  ): Promise<readonly T.ReviewThread[]> {
-    const nodes: unknown[] = [];
-    const cursors = new Set<string>();
-    let after: string | null = null;
-    do {
-      const pullRequest = await this.graphql(
-        REVIEW_THREADS_QUERY,
-        context,
-        after
-      );
-      const connection = record(pullRequest.reviewThreads, "reviewThreads");
-      nodes.push(...list(connection.nodes, "reviewThreads.nodes"));
-      const page = record(connection.pageInfo, "reviewThreads.pageInfo");
-      if (typeof page.hasNextPage !== "boolean")
-        missing("reviewThreads.pageInfo.hasNextPage", page.hasNextPage);
-      after = page.hasNextPage
-        ? string(page.endCursor, "reviewThreads.pageInfo.endCursor")
-        : null;
-      if (after !== null) {
-        if (!after || cursors.has(after))
-          missing("reviewThreads.pageInfo.endCursor must advance", after);
-        cursors.add(after);
-      }
-    } while (after !== null);
-    return parseReviewThreads(nodes);
+  async reviewThreadPage(
+    context: T.PrContext,
+    after: string | null
+  ): Promise<T.ReviewThreadPage> {
+    return parseReviewThreadPage(
+      await this.graphql(REVIEW_THREADS_QUERY, context, after)
+    );
   }
   async commitRollups(
     context: T.PrContext
@@ -810,6 +790,25 @@ export async function resolveChecks(
         ? "fast path reported no checks; GraphQL rollup exists but listed no readable check"
         : "fast path and GraphQL rollup were empty";
   throw new ChecksUnavailable(`could not read PR checks: ${suffix}`);
+}
+export async function resolveReviewThreads(
+  reader: T.GitHubReader,
+  context: T.PrContext
+): Promise<readonly T.ReviewThread[]> {
+  const threads: T.RawReviewThread[] = [];
+  const cursors = new Set<string>();
+  let after: string | null = null;
+  do {
+    const page = await reader.reviewThreadPage(context, after);
+    threads.push(...page.threads);
+    after = page.endCursor;
+    if (after !== null) {
+      if (!after || cursors.has(after))
+        missing("reviewThreads.pageInfo.endCursor must advance", after);
+      cursors.add(after);
+    }
+  } while (after !== null);
+  return buildReviewThreads(threads);
 }
 export async function resolveContext(args: {
   readonly reader: T.GitHubReader;
