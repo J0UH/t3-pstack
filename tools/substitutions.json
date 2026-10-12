@@ -88,9 +88,14 @@
       "rationale": "a project skill named verify replaces Claude Code's user-only bundled /verify (#71); must precede the .cursor/skills/ rule"
     },
     {
-      "pattern": "run `scripts/worktree-audit.sh`",
+      "regex": "run `scripts/worktree-audit\\.sh[^`]*`",
       "replacement": "run `skills/poteto-mode/scripts/worktree-audit.mjs` under the installed plugin",
       "rationale": "the port ships its own audit script; a skill-relative path does not resolve from the working directory"
+    },
+    {
+      "pattern": " Without `-b` it checks `MERGED` against `origin/HEAD`, so pass `-b origin/<branch>` when PRs target another branch.",
+      "replacement": " It checks `MERGED` against the default branch origin advertises. A branch whose own PR merged into another base can still reach `safe` through its PR state.",
+      "rationale": "the port's worktree-audit.mjs has no -b flag; it reads the default branch from origin and classifies a branch merged elsewhere by its PR"
     },
     {
       "pattern": "`.cursor/worktrees/myrepo/x`",
@@ -392,6 +397,10 @@
     }
   ],
   "denylist": [
+    {
+      "token": "worktree-audit.sh",
+      "hint": "the port excludes upstream's shell audit and ships skills/poteto-mode/scripts/worktree-audit.mjs; rewrite the command to run that"
+    },
     {
       "regex": "(?<!/)grok-",
       "hint": "Cursor model slug; point at the Models section, or add a substitution rule for the phrase (a T3 target such as grok/grok-4.7 is allowed)"
