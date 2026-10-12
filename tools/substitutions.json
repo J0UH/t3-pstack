@@ -27,7 +27,7 @@
       "rationale": "the menu description names the plugin agent by its file name"
     },
     {
-      "pattern": "Spawn `Task` with `subagent_type: \"Comment Sicko\"`",
+      "pattern": "Spawn `Task` with `subagent_type: \"comment-sicko\"`",
       "replacement": "Spawn an `Agent` with `subagent_type: \"pstack:comment-sicko\"`",
       "rationale": "plugin agents register under the plugin namespace by file name (#58); must precede the `Task` rule"
     },
