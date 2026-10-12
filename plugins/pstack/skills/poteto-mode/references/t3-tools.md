@@ -34,6 +34,7 @@ This plugin is `t3-pstack`, so its skills and agents register as `t3-pstack:<nam
 
 poteto-mode's [Subagents](../SKILL.md#subagents) section applies through `delegate_task`, with these mappings:
 
+- The chat that receives `/poteto-mode` runs the playbook, keeps its todolist, and makes every `delegate_task` call. A `pstack:poteto-agent` brief goes to a delegate for one step, never to a child that runs the playbook.
 - Every pstack role dispatches through `delegate_task`, same family included, so every child shows up in T3 and reads its options from one place.
 - A child gets only its brief, never the parent's context. Pass file pointers and absolute paths.
 - `subagent_type: "pstack:poteto-agent"` becomes a brief that opens with "Read `<plugin>/skills/poteto-mode/SKILL.md` in full before any work." Use the absolute path you read this file from. `pstack:comment-sicko` becomes the same with `<plugin>/skills/poteto-mode/references/agents/comment-sicko.md`. Any other `subagent_type`, and the effort agents, need no brief line.
