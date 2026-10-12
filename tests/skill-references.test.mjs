@@ -41,9 +41,20 @@ describe("prose skill references", () => {
     expect(dangling).toEqual([]);
   });
 
+  // An entry names its leaf as `- **Title.**`, which resolves to principle-<title>
+  // kebab-cased with hyphens kept and other punctuation dropped, or gives the
+  // name outright as `- **Title** (**principle-x**).`
   test("poteto-mode's Principles index lists exactly the principle leaves", () => {
     const index = readFileSync(join(skillsDir, "poteto-mode/SKILL.md"), "utf8");
-    const listed = new Set([...index.matchAll(/\(\*\*(principle-[a-z0-9-]+)\*\*\)/g)].map((m) => m[1]));
-    expect([...listed].sort()).toEqual([...principles].sort());
+    const section = index.split(/^## Principles$/m)[1].split(/^## /m)[0];
+    const listed = [...section.matchAll(/^- \*\*([^*]+?)(?:\.\*\*|\*\* \(\*\*(principle-[a-z0-9-]+)\*\*\)\.)/gm)].map(
+      ([, title, name]) =>
+        name ??
+        `principle-${title
+          .toLowerCase()
+          .replace(/[^a-z0-9 -]/g, "")
+          .replace(/ +/g, "-")}`,
+    );
+    expect(listed.sort()).toEqual([...principles].sort());
   });
 });

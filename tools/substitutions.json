@@ -316,6 +316,11 @@
       "rationale": "Cursor's system prompt names its agent-transcripts directory; Claude Code's does not, so the port names the path"
     },
     {
+      "pattern": "the `agent-transcripts/` directory the system prompt names",
+      "replacement": "Claude Code's per-project transcripts directory at `~/.claude/projects/<encoded-cwd>/`",
+      "rationale": "Cursor's system prompt names its agent-transcripts directory; Claude Code's does not, so the port names the path"
+    },
+    {
       "pattern": "~/.cursor/plugins/",
       "replacement": "~/.claude/plugins/",
       "rationale": "Claude Code installs plugins under ~/.claude/plugins/"
