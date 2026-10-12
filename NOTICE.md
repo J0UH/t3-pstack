@@ -23,6 +23,7 @@ This plugin is a port of upstream MIT-licensed work. The port's modifications an
 | `plugins/pstack/skills/benchmark-checklist/`, `plugins/pstack/skills/principle-explain-the-number/` (v0.15.6 additions) | [cursor/plugins/pstack @ 23e4138](https://github.com/cursor/plugins/tree/23e4138/pstack) | (c) 2026 Lauren Tan | MIT | [LICENSE](LICENSE) |
 | `plugins/pstack/skills/correct/` (v0.15.9 addition) | [cursor/plugins/pstack @ e43c7ee](https://github.com/cursor/plugins/tree/e43c7ee/pstack) | (c) 2026 Lauren Tan | MIT | [LICENSE](LICENSE) |
 | `plugins/pstack/skills/poteto-help/` (v0.15.13 addition) | [cursor/plugins/pstack @ 2cbf585](https://github.com/cursor/plugins/tree/2cbf585/pstack) | (c) 2026 Lauren Tan | MIT | [LICENSE](LICENSE) |
+| `plugins/pstack/skills/ketchup/` (v0.15.17 addition) | [cursor/plugins/pstack @ 978ca6e](https://github.com/cursor/plugins/tree/978ca6e/pstack) | (c) 2026 Lauren Tan | MIT | [LICENSE](LICENSE) |
 
 ## What changed in the port
 
@@ -36,7 +37,7 @@ Summary of structural changes:
 - Seven skills imported from `cursor-team-kit`: `deslop`, `thermo-nuclear-code-quality-review`, `make-pr-easy-to-review`, `fix-ci`, `fix-merge-conflicts`, `get-pr-comments`, `what-did-i-get-done`. All copied verbatim — no rewiring needed.
 - `plugins/pstack/skills/babysit/` is independently authored as the Claude Code analog of Cursor's `/babysit` built-in. It has no upstream pstack equivalent; its workflow is informed by Cursor's public `/babysit` behavior. No code or prose was copied from any source.
 - `plugins/pstack/skills/poteto-mode/scripts/` is vendored from upstream (`watch-pr`, `orch`, `bootstrap.ts`, `package.json`, `bun.lock`). `worktree-audit.mjs` is a port-only rewrite of upstream's `worktree-audit.sh`, which `tools/upstream.json` excludes from sync; it reads the Claude Code, Codex, and Pi transcript directories instead of Cursor's and reports prunable worktrees. Port edits, each on the forked list `bun tools/sync.mjs --dry-run` prints: `bootstrap.ts` fails clearly under node and installs production dependencies only; `orch/store.ts` and `orch/orch.test.ts` carry the silent-failure fixes from #35; `package.json` typechecks the whole tree; `tsconfig.json` is port-only. Everything else is upstream's code under the upstream MIT license.
-- `plugins/pstack/agents/comment-sicko.md` is upstream's `Comment Sicko` agent, renamed to `comment-sicko` so the name works as a Claude Code `subagent_type`. The body is verbatim.
+- `plugins/pstack/agents/comment-sicko.md` is upstream's `comment-sicko` agent, with a verbatim body. Upstream renamed it from `Comment Sicko` in v0.15.20. The port has always used the file name, so the name works as a Claude Code `subagent_type`.
 - A Codex build shares the same `skills/` tree. It adds `plugins/pstack/.codex-plugin/plugin.json`, a root `.agents/plugins/marketplace.json`, and `plugins/pstack/skills/poteto-mode/references/codex-tools.md` (the Claude-to-Codex tool, model, built-in, and per-skill map). Affected skill entry points link to this map so direct invocation works without the optional Codex prompt stubs. See the [reference](docs/reference.md#codex).
 
 ## Modifications
