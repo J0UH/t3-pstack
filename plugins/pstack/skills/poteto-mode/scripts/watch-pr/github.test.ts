@@ -531,6 +531,16 @@ describe("review thread pagination", () => {
     expect(() => parseReviewThreadPage(pullRequest)).toThrow(WatcherQueryError);
   });
 
+  it("rejects a page that says another exists but carries no cursor", () => {
+    const pullRequest = {
+      reviewThreads: {
+        nodes: [],
+        pageInfo: { hasNextPage: true, endCursor: null },
+      },
+    };
+    expect(() => parseReviewThreadPage(pullRequest)).toThrow(WatcherQueryError);
+  });
+
   it("refuses a cursor that repeats instead of reading the same page forever", async () => {
     const reader = fakeReader({
       threadPages: [

@@ -102,6 +102,8 @@ describe("fenced plan evidence", () => {
     ["list item delimiter", "    ```yaml", "    PORT: 3000\n    message: “code”", "    ```"],
     ["longer closing delimiter", "~~~yaml", "message: “code”", "~~~~"],
     ["delimiter with trailing text", "```text", "```still code\nmessage: “code”", "```"],
+    ["tilde info string with a backtick", "~~~yaml `info`", "message: “code”", "~~~"],
+    ["closing delimiter with trailing whitespace", "```yaml", "message: “code”", "``` \t"],
   ]) {
     test(name, () => {
       const example = `\n${open}\n${inner}\n## Example heading\n${close}\n`;
