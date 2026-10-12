@@ -2,6 +2,10 @@
 
 This file is the release changelog, with one `## <version> - <title>` entry per release, newest first. The Cursor-to-Claude rewrite rules live in [`tools/substitutions.json`](tools/substitutions.json), and the [sync boundary](CONTRIBUTING.md#the-sync-boundary) in `CONTRIBUTING.md` defines how a change to upstream's skill content is declared.
 
+## 1.0.10 - merge pstack-claude 0.9.82
+
+t3-pstack 1.0.10 merges pstack-claude 0.9.82 and the commit after it, which finds a Homebrew-installed Pi in the local Pi checks (upstream commit `1bfdab4`). Lauren Tan's pstack v0.15.16 through v0.15.20 is not yet in the port. The 0.9.82 entry below describes what came in: `principle-attack-the-premise` and `principle-test-behavior-not-implementation` return to her original text, the census Stop rule and the check that a test fails when every imported function returns `undefined`, with small additions, and `poteto-mode`'s summaries of both follow. A pull request template arrives as upstream ships it. The Pi changes come in as upstream ships them; t3-pstack does not use Pi. Model defaults are unchanged, and so is the `t3` block in `models.json`.
+
 ## 1.0.9 - merge pstack-claude 0.9.81
 
 t3-pstack 1.0.9 merges pstack-claude 0.9.80 and 0.9.81 (upstream commit `24c96b1`). It carries no new change from Lauren Tan's pstack. The upstream entries below describe what came in: `watch-pr` and `ship-pr` compare the base branch's current commit instead of the PR's recorded `baseRefOid`, every GraphQL read in the watcher fails closed on `errors`, and `ship-pr inspect` reads a closed or merged PR whose base branch is gone. The Pi orphan cleanup fix comes in as upstream ships it; t3-pstack does not use Pi. Model defaults are unchanged.
@@ -93,6 +97,7 @@ t3-pstack is pstack-claude 0.9.69 with every subagent, panel, fan-out, schedule,
 - The checker rejects a malformed or duplicated role line, a list on a single-model role, a `default effort` line, a bad `session hook` value, and a single-family panel, counting `inherit-parent` as the parent's family. The generator runs the same grammar over the `t3` block.
 - The plugin is `t3-pstack@t3-pstack` (marketplace repo `chhoumann/t3-pstack`), and its model sheet is `t3-pstack-models.md`, so it never collides with pstack-claude's `pstack@pstack-claude` and `pstack-models.md`. Skill text keeps upstream's `pstack:<name>` spelling; `t3-tools.md` reads it as `t3-pstack:<name>`.
 - The sync denylist's `grok-` token became `(?<!/)grok-`, so a T3 target such as `grok/grok-4.7` passes while a bare Cursor slug still fails.
+
 ## 0.9.82 - restore upstream's checks in two principle skills and run haiku 5.5 on Pi
 
 `principle-attack-the-premise` and `principle-test-behavior-not-implementation` follow upstream's text again. The attack-the-premise Stop rule holds the next fix until the shared premise is written down and a per-actor census exists. When the premise is not about actors, the census is a rerunnable check whose result would differ if the premise were false. Test behavior asks whether a test would still pass if every imported function returned `undefined`, and names five shapes that would. Its keep-list adds an absence-only test that fails when the forbidden effect is injected, and a constant pin on a value promised to users. The `poteto-mode` summaries of both principles follow upstream as well. @johnkattenhorn found the drift in [#253](https://github.com/michael-denyer/pstack-claude/issues/253); the fix is in [#254](https://github.com/michael-denyer/pstack-claude/pull/254).
