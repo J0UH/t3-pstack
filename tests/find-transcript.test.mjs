@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 
@@ -9,6 +9,7 @@ import { removeDuring } from "./remove-during.mjs";
 
 const script = join(import.meta.dir, "../plugins/pstack/skills/reflect/scripts/find-transcript.mjs");
 const noNode = spawnSync("node", ["--version"]).status !== 0;
+const skill = readFileSync(join(import.meta.dir, "../plugins/pstack/skills/reflect/SKILL.md"), "utf8");
 
 const meta = JSON.stringify({ type: "bridge-session", sessionId: "abc" });
 const summary = JSON.stringify({ type: "summary", summary: "earlier work" });
@@ -294,6 +295,34 @@ describe("find-transcript", () => {
     );
     await expect(openingPrompt(rollout)).rejects.toThrow(/Codex rollout/);
     await expect(findTranscript(dir, "ship the release")).rejects.toThrow(/Codex rollout/);
+  });
+
+  // Step 1's command exactly as reflect/SKILL.md gives it, with its placeholders filled in.
+  function skillCommand(encodedCwd, fragment) {
+    const command = skill.match(/^```bash\n(node <plugin>\/skills\/reflect\/scripts\/find-transcript\.mjs .*)$/m)?.[1];
+    if (command === undefined) throw new Error("reflect/SKILL.md has no find-transcript command");
+    return command
+      .replace("<plugin>", join(import.meta.dir, "../plugins/pstack"))
+      .replace("<encoded-cwd>", encodedCwd)
+      .replace("<opening prompt fragment>", fragment);
+  }
+
+  test("step 1's command searches CLAUDE_CONFIG_DIR's projects, else ~/.claude's", () => {
+    const dir = tempDir();
+    const home = join(dir, "home");
+    const pool = join(dir, "claude pool");
+    const pooled = transcript(join(pool, "projects/-work-repo"), "a/a.jsonl", [meta, user("ship the release")], 100);
+    const fallback = transcript(join(home, ".claude/projects/-work-repo"), "b.jsonl", [meta, user("ship the release")], 200);
+    const run = (env) =>
+      spawnSync("sh", ["-c", skillCommand("-work-repo", "ship the")], { encoding: "utf8", env: { PATH: process.env.PATH, HOME: home, ...env } });
+    const redirected = run({ CLAUDE_CONFIG_DIR: pool });
+    expect(redirected.stderr).toBe("");
+    expect(redirected.stdout.trim()).toBe(pooled);
+    for (const env of [{}, { CLAUDE_CONFIG_DIR: "" }]) {
+      const defaulted = run(env);
+      expect(defaulted.status).toBe(0);
+      expect(defaulted.stdout.trim()).toBe(fallback);
+    }
   });
 
   test("the CLI prints the path and exits 1 when nothing matches", () => {
