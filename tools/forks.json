@@ -122,8 +122,14 @@
     },
     "plugins/pstack/skills/poteto-mode/scripts/check-plan.mjs": {
       "kind": "port-feature",
-      "why": "Checks for the port's plan skeleton markers (standing orders, installed-plugin reads, an hourly cadence, the configured swarm workers model), requires a box under each program task and under Close the program, tracks code fences by delimiter character and length at any indentation, so a fence inside a list item counts, and strips a leading byte-order mark before parsing.",
+      "why": "Checks for the port's plan skeleton markers (standing orders, installed-plugin reads, an hourly cadence, the configured swarm workers model), requires a box under each program task and under Close the program, opens and closes a code fence at any indentation so a fence inside a list item counts, and strips a leading byte-order mark before parsing.",
       "since": "0.9.19",
+      "upstream": "not-proposed"
+    },
+    "plugins/pstack/skills/poteto-mode/scripts/check-plan.test.ts": {
+      "kind": "port-feature",
+      "why": "Gives upstream's valid-plan fixture the boxes under each program task and under Close the program, the standing-orders, installed-plugin, and hourly lines, and the configured swarm workers lane line that the port's checker requires.",
+      "since": "0.9.83",
       "upstream": "not-proposed"
     },
     "plugins/pstack/skills/poteto-mode/scripts/orch/orch.test.ts": {
@@ -164,7 +170,7 @@
     },
     "plugins/pstack/skills/poteto-mode/scripts/watch-pr/github.test.ts": {
       "kind": "policy",
-      "why": "Covers the port's GitHub reader: completed conclusions that gh buckets as pending, a checkout PR paired with a different explicit repository, a full open-PR page refused as a possibly cut stack, a stack that never takes a PR headed at the default branch as parent, child, or seed under the default branch the repository reports, while a fork branch of the same name still stacks, a check-rollup cursor that repeats or returns to an earlier page, a review-thread cursor that repeats, a review-thread page that says another exists but carries no cursor, a binary that cannot be spawned, the base revision field, and a no-checks reading that needs both check reads to agree and fails closed otherwise.",
+      "why": "Covers the port's GitHub reader: completed conclusions that gh buckets as pending, a checkout PR paired with a different explicit repository, a full open-PR page refused as a possibly cut stack, a stack that never takes a PR headed at the default branch as parent, child, or seed under the default branch the repository reports, while a fork branch of the same name still stacks, a check-rollup cursor that repeats or returns to an earlier page, a review-thread cursor that repeats, a review-thread page that promises more pages without a cursor, a binary that cannot be spawned, the base revision field, and a no-checks reading that needs both check reads to agree and fails closed otherwise.",
       "since": "0.9.24",
       "upstream": "not-proposed"
     },
@@ -277,7 +283,7 @@
       "upstream": "not-proposed"
     }
   },
-  "cursor-team-kit": {
+  "thermos": {
     "plugins/pstack/skills/thermo-nuclear-code-quality-review/SKILL.md": {
       "kind": "policy",
       "why": "Adds a Report Format section requiring one summary report plus one detail file per subsystem or reviewer.",

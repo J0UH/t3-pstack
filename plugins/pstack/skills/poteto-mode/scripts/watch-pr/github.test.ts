@@ -531,26 +531,38 @@ describe("review thread pagination", () => {
     expect(() => parseReviewThreadPage(pullRequest)).toThrow(WatcherQueryError);
   });
 
-  it("rejects a page that says another exists but carries no cursor", () => {
-    const pullRequest = {
-      reviewThreads: {
-        nodes: [],
-        pageInfo: { hasNextPage: true, endCursor: null },
-      },
-    };
-    expect(() => parseReviewThreadPage(pullRequest)).toThrow(WatcherQueryError);
+  it("rejects a page that promises more pages without a cursor", () => {
+    for (const endCursor of [null, ""]) {
+      const pullRequest = {
+        reviewThreads: {
+          pageInfo: { hasNextPage: true, endCursor },
+          nodes: [],
+        },
+      };
+      expect(() => parseReviewThreadPage(pullRequest)).toThrow(
+        WatcherQueryError
+      );
+    }
   });
 
-  it("refuses a cursor that repeats instead of reading the same page forever", async () => {
+  it("rejects a thread cursor that does not advance instead of paging on", async () => {
+    const stuck = { threads: [], endCursor: "same" };
     const reader = fakeReader({
-      threadPages: [
-        { threads: [thread("one")], endCursor: "next" },
-        { threads: [thread("one")], endCursor: "next" },
-      ],
+      threadPages: [stuck, stuck, { threads: [], endCursor: null }],
     });
-    await expect(resolveReviewThreads(reader, context)).rejects.toBeInstanceOf(
-      WatcherQueryError
-    );
+    await expect(resolveReviewThreads(reader, context)).rejects.toMatchObject({
+      failure: {
+        kind: "missing-key",
+        retryable: true,
+        detail: expect.stringContaining(
+          "reviewThreads.pageInfo.endCursor must advance"
+        ),
+      },
+    });
+    expect(reader.calls).toEqual([
+      "reviewThreadPage:null",
+      "reviewThreadPage:same",
+    ]);
   });
 });
 
