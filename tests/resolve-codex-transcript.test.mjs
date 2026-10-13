@@ -2,6 +2,8 @@
 import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
+  chmodSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -20,7 +22,7 @@ import { dirname, join, relative } from "node:path";
 const SCRIPTS = join(import.meta.dir, "../plugins/pstack/skills/poteto-mode/scripts");
 const RESOLVER = join(SCRIPTS, "resolve-codex-transcript.ts");
 const LAUNCHER = join(SCRIPTS, "resolve-codex-transcript");
-const MAPPING = readFileSync(join(import.meta.dir, "../plugins/pstack/skills/poteto-mode/references/t3-tools.md"), "utf8");
+const MAPPING = readFileSync(join(import.meta.dir, "../plugins/pstack/skills/poteto-mode/references/codex-tools.md"), "utf8");
 const CHAT = "00000000-1111-2222-3333-444444444444";
 const OTHER = "00000000-1111-2222-3333-555555555555";
 const OPENING = "Reflect on this synthetic request.";
@@ -53,12 +55,12 @@ function setRolloutPath(path) {
   database.close();
 }
 
-function run(args = [CHAT], env = { CODEX_HOME: home }) {
+function run(args = [CHAT], env = { CODEX_HOME: home }, cwd) {
   const environment = {};
   for (const [key, value] of Object.entries({ ...process.env, ...env })) {
     if (value !== undefined) environment[key] = value;
   }
-  const result = Bun.spawnSync([process.execPath, RESOLVER, ...args], { env: environment });
+  const result = Bun.spawnSync([process.execPath, RESOLVER, ...args], { env: environment, cwd });
   const stdout = result.stdout.toString();
   expect(result.stderr.toString()).toBe("");
   expect(stdout.length).toBeLessThan(5000);
@@ -222,6 +224,30 @@ describe("resolve-codex-transcript", () => {
     expect(snapshot()).toEqual(before);
   });
 
+  // The writer's -shm file is not copied, and a read-only open cannot create it.
+  it.skipIf(process.getuid?.() === 0)(
+    "reports a live index whose schema is only in its -wal file as unreadable (skipped as root)",
+    () => {
+      const live = join(root, "live index");
+      mkdirSync(live);
+      unlinkSync(join(home, "state_5.sqlite"));
+      const writer = new Database(join(home, "state_5.sqlite"));
+      writer.run("PRAGMA journal_mode = WAL");
+      writer.run("CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT NOT NULL)");
+      writer.run("INSERT INTO threads VALUES (?, ?)", [CHAT, rollout]);
+      for (const name of ["state_5.sqlite", "state_5.sqlite-wal"]) copyFileSync(join(home, name), join(live, name));
+      writer.close();
+      chmodSync(live, 0o555);
+      try {
+        const { code, result } = run([CHAT], { CODEX_HOME: home, CODEX_SQLITE_HOME: live });
+        expect(result).toEqual({ status: "unresolved", reason: "index_unreadable", fallback: "session_digest" });
+        expect(code).toBe(1);
+      } finally {
+        chmodSync(live, 0o755);
+      }
+    },
+  );
+
   it("reads the index from config.toml's sqlite_home, else CODEX_SQLITE_HOME", () => {
     const elsewhere = join(root, "sqlite home");
     const empty = join(root, "empty");
@@ -236,6 +262,17 @@ describe("resolve-codex-transcript", () => {
     expect(run([CHAT], { CODEX_HOME: home, HOME: root }).result.path).toBe(rollout);
     writeFileSync(join(home, "config.toml"), "sqlite_home = 5\n");
     expectUnresolved("config_unreadable");
+  });
+
+  // Codex reads a relative CODEX_SQLITE_HOME against its working directory at startup.
+  it("refuses a relative CODEX_SQLITE_HOME instead of guessing its base", () => {
+    const elsewhere = join(root, "sqlite home");
+    mkdirSync(elsewhere);
+    renameSync(join(home, "state_5.sqlite"), join(elsewhere, "state_5.sqlite"));
+    const { code, result } = run([CHAT], { CODEX_HOME: home, CODEX_SQLITE_HOME: "sqlite home" }, root);
+    expect(result).toEqual({ status: "unresolved", reason: "sqlite_home_relative", fallback: "session_digest" });
+    expect(code).toBe(1);
+    expect(run([CHAT], { CODEX_HOME: home, HOME: root, CODEX_SQLITE_HOME: "~/sqlite home" }).result.path).toBe(rollout);
   });
 
   it("rejects an index symlink that escapes the home", () => {
@@ -343,9 +380,9 @@ describe("resolve-codex-transcript", () => {
     expect(launched.exitCode).toBe(0);
   });
 
-  it("runs as t3-tools.md gives the command, from a plugin path with a space", () => {
-    const command = MAPPING.match(/^ *("<plugin>\/skills\/poteto-mode\/scripts\/resolve-codex-transcript" .*)$/m)?.[1];
-    if (command === undefined) throw new Error("t3-tools.md has no resolver command");
+  it("runs as codex-tools.md gives the command, from a plugin path with a space", () => {
+    const command = MAPPING.match(/^("<plugin>\/skills\/poteto-mode\/scripts\/resolve-codex-transcript" .*)$/m)?.[1];
+    if (command === undefined) throw new Error("codex-tools.md has no resolver command");
     const plugin = join(root, "plugin install");
     symlinkSync(join(import.meta.dir, "../plugins/pstack"), plugin);
     const env = { PATH: process.env.PATH, HOME: root, CODEX_HOME: home, CODEX_THREAD_ID: CHAT };

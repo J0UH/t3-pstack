@@ -4,8 +4,9 @@
 //   node find-transcript.mjs [--session <id>] <transcripts-dir> <opening-prompt-fragment> [workspace]
 //
 // With a Claude Code session ID, prints that session's own <id>.jsonl, flat or
-// nested, when it exists. Otherwise prints the newest path whose opening prompt
-// carries the fragment, or exits 1 with "no transcript". Covers
+// nested, or exits 1 with "no transcript" when neither exists. Without one,
+// prints the newest path whose opening prompt carries the fragment, or exits 1
+// with "no transcript". Covers
 // Claude Code's three layouts under one per-project directory (flat
 // <id>.jsonl, nested <id>/<id>.jsonl, subagent <id>/subagents/<child>.jsonl)
 // Pi's <iso>_<id>.jsonl under its per-cwd sessions directory, and GitHub
@@ -211,9 +212,18 @@ async function main(argv) {
     console.error("usage: find-transcript.mjs [--session <id>] <transcripts-dir> <opening-prompt-fragment> [workspace]");
     return 2;
   }
-  const path = sessionTranscript(projectsDir, sessionId) ?? (await findTranscript(projectsDir, fragment, workspace));
+  // A session ID that names no file, as when Claude Code does not persist the
+  // transcript, fails instead of scanning, since the scan could return a
+  // sibling session that shares the opening prompt.
+  const path = sessionId
+    ? sessionTranscript(projectsDir, sessionId)
+    : await findTranscript(projectsDir, fragment, workspace);
   if (!path) {
-    console.error(`no transcript under ${projectsDir} opens with ${JSON.stringify(fragment)}`);
+    console.error(
+      sessionId
+        ? `no transcript under ${projectsDir} is named for session ${sessionId}`
+        : `no transcript under ${projectsDir} opens with ${JSON.stringify(fragment)}`,
+    );
     return 1;
   }
   console.log(path);

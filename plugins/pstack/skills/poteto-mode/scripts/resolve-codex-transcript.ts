@@ -49,25 +49,23 @@ function codexHome(): string {
   }
 }
 
-// Resolves `path` as Codex does: a leading `~` is the home directory, and a
-// relative path is relative to `base`.
-function directoryAt(base: string, path: string): string {
-  const expanded =
-    path === "~"
-      ? homedir()
-      : path.startsWith("~/")
-        ? join(homedir(), path.slice(2))
-        : path;
+// A leading `~` is the home directory, as Codex reads it.
+function expandHome(path: string): string {
+  if (path === "~") return homedir();
+  return path.startsWith("~/") ? join(homedir(), path.slice(2)) : path;
+}
+
+function realDirectory(path: string): string {
   try {
-    return realpathSync(resolvePath(base, expanded));
+    return realpathSync(path);
   } catch {
     throw new Unresolved("index_directory_unavailable");
   }
 }
 
 // Codex 0.162.1 keeps the index in config.toml's `sqlite_home`, relative to the
-// config's directory, else in CODEX_SQLITE_HOME, relative to the working
-// directory, else in the home itself.
+// config's directory, else in CODEX_SQLITE_HOME, relative to Codex's working
+// directory at startup, else in the home itself.
 function indexDirectory(home: string): string {
   let configured: unknown;
   try {
@@ -80,10 +78,16 @@ function indexDirectory(home: string): string {
       throw new Unresolved("config_unreadable");
     }
   }
-  if (typeof configured === "string") return directoryAt(home, configured);
+  if (typeof configured === "string") {
+    return realDirectory(resolvePath(home, expandHome(configured)));
+  }
   if (configured !== undefined) throw new Unresolved("config_unreadable");
   const fromEnvironment = process.env.CODEX_SQLITE_HOME?.trim();
-  return fromEnvironment ? directoryAt(process.cwd(), fromEnvironment) : home;
+  if (!fromEnvironment) return home;
+  const path = expandHome(fromEnvironment);
+  // A shell command cannot know Codex's working directory at startup.
+  if (!isAbsolute(path)) throw new Unresolved("sqlite_home_relative");
+  return realDirectory(path);
 }
 
 // Newest schema version first: a Codex upgrade leaves the older index behind.
@@ -138,7 +142,8 @@ function openIndex(path: string): Database | "not_index" | "unreadable" {
       database = new Database(name, OPEN_FLAGS);
       if (threadIndex(database)) return database;
       database.close();
-      return "not_index";
+      // The immutable open of a live index cannot see a schema still in its -wal file.
+      return live && name === immutable ? "unreadable" : "not_index";
     } catch {
       database?.close();
     }

@@ -340,7 +340,23 @@ describe("find-transcript", () => {
     expect(exact.stderr).toBe("");
     expect(exact.stdout.trim()).toBe(own);
     expect(run({}).stdout.trim()).toBe(sibling);
-    expect(run({ CLAUDE_CODE_SESSION_ID: "bbbbbbbb-0000-4000-8000-000000000009" }).stdout.trim()).toBe(sibling);
+  });
+
+  // Claude Code under --no-session-persistence exports the ID but writes no file.
+  test("step 1's command exits 1 instead of returning a sibling when this session has no file", () => {
+    const dir = tempDir();
+    const home = join(dir, "home");
+    const projects = join(home, ".claude/projects/-work-repo");
+    const prompt = [meta, user("Ship the release for alpha/beta")];
+    transcript(projects, "aaaaaaaa-0000-4000-8000-000000000002.jsonl", prompt, 400);
+    const command = skillCommand(dir, "-work-repo", "Ship the release");
+    const env = { PATH: process.env.PATH, HOME: home, CLAUDE_CODE_SESSION_ID: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d" };
+    const missing = spawnSync("sh", ["-c", command], { encoding: "utf8", env });
+    expect(missing.status).toBe(1);
+    expect(missing.stdout).toBe("");
+    expect(missing.stderr).toBe(
+      `no transcript under ${projects} is named for session 0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d\n`,
+    );
   });
 
   test("step 1's command searches CLAUDE_CONFIG_DIR's projects, else ~/.claude's", () => {
