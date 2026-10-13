@@ -1,5 +1,7 @@
 # t3-pstack
 
+> **J0UH's fork** of [chhoumann/t3-pstack](https://github.com/chhoumann/t3-pstack). Our machines install it from here with `claude plugin marketplace add J0UH/t3-pstack` and `codex plugin marketplace add J0UH/t3-pstack`, then `t3-pstack@t3-pstack`. chhoumann's changes arrive by PR from the `upstream` remote (`git merge upstream/main`, `bun tools/generate.mjs`, `bun test tests/`). We keep our own changes small so those merges stay cheap, and our model roles live outside the plugin, in our j0uh-stack setup. Everything below this note is chhoumann's README.
+
 pstack for [T3 Code](https://github.com/pingdotgg/t3code). It is [pstack-claude](https://github.com/michael-denyer/pstack-claude), Michael Denyer's Claude Code and Codex port of Lauren Tan's (poteto's) [pstack](https://github.com/cursor/plugins/tree/main/pstack), with one change: every subagent, panel, fan-out, schedule, and PR watch dispatches through T3's `t3-code` MCP tools. An `interrogate`, `arena`, or `architect` panel can then run Claude, GPT, and Grok reviewers side by side, from a Claude Code thread or a Codex thread. The mapping lives in [`t3-tools.md`](plugins/pstack/skills/poteto-mode/references/t3-tools.md).
 
 t3-pstack works only inside T3. Outside T3, use pstack-claude.
