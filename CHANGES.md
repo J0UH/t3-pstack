@@ -2,6 +2,10 @@
 
 This file is the release changelog, with one `## <version> - <title>` entry per release, newest first. The Cursor-to-Claude rewrite rules live in [`tools/substitutions.json`](tools/substitutions.json), and the [sync boundary](CONTRIBUTING.md#the-sync-boundary) in `CONTRIBUTING.md` defines how a change to upstream's skill content is declared.
 
+## 1.0.14 - OpenCode and Pi models in the T3 sheet
+
+A T3 sheet entry splits at its first `/`, so a model ID that carries its own provider prefix, such as OpenCode's `openrouter/x-ai/grok-4.7` or Pi's `openai-codex/gpt-6.1-sol`, is written whole after the provider instance. A model's family is the first segment of the ID's last `/` part, so a route prefix does not make a model a different family on a panel. Before, `t3-sheet.mjs` rejected both, so setup-pstack could not seat an OpenCode or Pi model on any role. By @ash663 ([#13](https://github.com/chhoumann/t3-pstack/pull/13)), with the Pi test from @electro56435 ([#14](https://github.com/chhoumann/t3-pstack/pull/14)).
+
 ## 1.0.13 - reflect finds its own Claude and Codex transcripts
 
 Reflect's step 1 now finds this conversation's own transcript on a Claude Code thread, with the default config home or a redirected one, and on a Codex thread with any `CODEX_HOME`. Before, a redirected Claude home and every Codex thread fell back to a digest the parent wrote, and a Claude thread could pick a sibling session that shared its opening prompt. The Codex resolver comes from Eric Litman's open-pstack [PR #151](https://github.com/ericlitman/open-pstack/pull/151) (issue #140), which builds on Donncha O'Toole's tested candidate. t3-pstack modifies it as listed below, and `NOTICE.md` records the changes beside their credit.
