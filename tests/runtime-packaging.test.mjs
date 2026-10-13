@@ -1,6 +1,6 @@
 // Runtime packaging contracts: manifests and hook commands.
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { validateHooks } from "../tools/generate.mjs";
@@ -68,6 +68,14 @@ describe("manifests", () => {
     expect(codexMarketplace.plugins.map(({ name, source, category }) => [name, source.path, category])).toEqual([
       [codex.name, claudeMarketplace.plugins[0].source, codex.interface.category],
     ]);
+  });
+
+  // pstack-claude ships this file, so a merge from it can bring the file back.
+  test("there is no root Agent Plugins manifest", () => {
+    expect(
+      existsSync(join(repoRoot, "plugins/pstack/plugin.json")),
+      "delete plugins/pstack/plugin.json: Codex reads a plugin with that Agent Plugins manifest as an Agent Plugin and truncates each injected SKILL.md to 8,000 bytes, which cuts poteto-mode off mid-file",
+    ).toBe(false);
   });
 });
 

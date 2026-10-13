@@ -111,5 +111,6 @@ t3-pstack is [MIT-licensed](LICENSE). Its T3 modifications and additions are © 
 - [pstack-claude](https://github.com/michael-denyer/pstack-claude), MIT, © 2026 Michael Denyer, the Claude Code, Codex, and Pi port this fork tracks.
 - [pstack](https://github.com/cursor/plugins/tree/main/pstack) in cursor/plugins, MIT, © 2026 Lauren Tan (poteto), the original skill stack.
 - The skills imported from [cursor-team-kit](https://github.com/cursor/plugins/tree/main/cursor-team-kit), MIT, © 2026 Cursor. See [LICENSE-cursor-team-kit](LICENSE-cursor-team-kit).
+- The skills and review agents imported from [thermos](https://github.com/cursor/plugins/tree/main/thermos), MIT, © 2026 Cursor. See [LICENSE-thermos](LICENSE-thermos).
 
 [NOTICE.md](NOTICE.md) lists each upstream component with its source commit and license file.

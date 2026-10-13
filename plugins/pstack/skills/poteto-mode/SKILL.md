@@ -7,6 +7,8 @@ description: poteto's agent style for concise, detailed responses, deliberate su
 
 On T3, read the [platform mapping](../poteto-mode/references/t3-tools.md), including its per-skill notes, before following this skill.
 
+Bundled skills live at `../<name>/SKILL.md` from this file, so put this file's absolute path in every `poteto-agent` prompt.
+
 ## Platform Adaptation
 
 These skills use Claude Code tool names (the `Skill` tool, the `Agent` tool, `AskUserQuestion`) and the Claude model names the `Agent` tool accepts, as each Models section lists them. On Claude Code they work as written. On Codex, read [`references/codex-tools.md`](references/codex-tools.md) for the Codex equivalent of a Claude tool, model, or skill named by these workflows. On Pi, read [`references/pi-tools.md`](references/pi-tools.md) instead. On GitHub Copilot, CLI or app, read [`references/copilot-tools.md`](references/copilot-tools.md) instead. Other runtimes can discover the same Agent Skills tree, but they must use their own tool, model, and configuration equivalents. No one of these mappings is a cross-runtime map.
@@ -27,7 +29,7 @@ Remaining triggers:
 - Contested design → the **interrogate** skill (multi-model adversarial) before shipping.
 - Nontrivial multi-step → write the throughput checkpoint (Feature step 3).
 - Any prose surface, your reply to the user included → the **unslop** skill. Write the reply per **Writing the reply**. Agent-facing prose also follows the **plugin-dev:skill-development** skill (Claude Code's authoring guidance for SKILL.md files).
-- Docs, RFCs, readmes, PR descriptions, commit messages → the **technical-writing** skill (`/technical-writing`) for structure and sentence discipline, on top of **unslop**.
+- Docs, RFCs, readmes, PR descriptions, or commit messages → the **technical-writing** skill (`/technical-writing`), on top of **unslop**.
 - Before commit → the **deslop** skill (`/deslop`).
 - Before review → the **no-comments** skill (`/no-comments`).
 - Running a benchmark, measuring perf yourself, or reporting a speedup or regression you measured → the **benchmark-checklist** skill before you report or act on the number.
