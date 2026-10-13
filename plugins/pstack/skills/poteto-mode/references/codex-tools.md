@@ -88,9 +88,19 @@ Affected skill entry points and the optional Codex slash stubs point here. Most 
 | `architect` | The runner panel goes through the **arena** skill, so its `spawn_agent` fan-out and model substitution apply here too. |
 | `arena` | The parallel candidates and the cross-judge map to `spawn_agent`; substitute your configured Codex models for the runners and the cross-judge pool (see Model names above). |
 | `how` | The parallel explorers and the explainer map to `spawn_agent` fan-out; substitute your configured Codex models. |
-| `reflect` | The three reviewers and the synthesizer map to `spawn_agent`; substitute your configured Codex models. The transcript finder reads Claude Code's layout under `~/.claude/projects/`, so pass the session digest step 1 allows instead. |
+| `reflect` | The three reviewers and the synthesizer map to `spawn_agent`; substitute your configured Codex models. Step 1 resolves this thread's rollout per [Transcripts](#transcripts) instead of running the Claude Code finder. |
 | `swarm` | Each worker is a `spawn_agent` call on your configured Codex model, and those calls already run concurrently; give each writing worker its own worktree or output directory (see Subagent policy above). |
 | `why` | The parallel investigators and the synthesizer map to `spawn_agent`; substitute your configured Codex models. List MCP servers from the tools Codex exposes to the session, not from `.mcp.json` or `claude mcp list`. |
+
+## Transcripts
+
+Reflect's step 1 finder reads Claude Code's layout, so on Codex step 1 resolves this thread's rollout instead. Codex exports this thread's ID to every shell command as `CODEX_THREAD_ID`. Pass it to the resolver, and never search by chat title or time:
+
+```bash
+"<plugin>/skills/poteto-mode/scripts/resolve-codex-transcript" "$CODEX_THREAD_ID"
+```
+
+It finds the index directory as Codex 0.162.1 does, from `sqlite_home` in the home's `config.toml`, else `CODEX_SQLITE_HOME`, else the home, which is `$CODEX_HOME`, or `~/.codex` when that is unset or empty. It reads no other config layer, such as `/etc/codex/config.toml`, a project's `.codex/config.toml`, a profile, or a `-c` override, so a `sqlite_home` set only there ends in `index_missing`. A relative `CODEX_SQLITE_HOME` ends in `sqlite_home_relative`, since Codex reads it against its own working directory at startup. It looks up that exact ID in the `threads` table of the newest `state_<n>.sqlite` there that opens, without writing beside it. It checks that the rollout is inside the home's `sessions/` and that its first `session_meta` is this thread's, since a fork copies its parent's after its own, reading at most 500 records, 2 MiB, or one 256 KiB record to reach it. On success it exits 0 and prints JSON whose `path` is the transcript to pass. The exact ID already proves it is this thread's, so compare nothing. On a non-zero exit, pass step 1's digest.
 
 ## Vendored scripts
 
