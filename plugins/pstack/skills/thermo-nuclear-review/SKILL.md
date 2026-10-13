@@ -5,6 +5,8 @@ description: Comprehensive security and correctness audit of a branch's changes.
 
 # Thermo Nuclear Review
 
+On T3, read the [platform mapping](../poteto-mode/references/t3-tools.md), including its per-skill notes, before following this skill.
+
 Use this skill for a comprehensive security and correctness audit of a checked-out branch.
 
 ## Prompt
