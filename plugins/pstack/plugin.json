@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "t3-pstack",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "description": "pstack for T3 Code. Rigorous agent workflows whose subagents, panels, schedules, and PR watches dispatch through T3's orchestration, so panels mix Claude, GPT, and Grok. Original pstack by Lauren Tan (poteto); Claude Code port by Michael Denyer.",
   "author": {
     "name": "Christian Bager Bach Houmann",
