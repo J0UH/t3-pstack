@@ -22,6 +22,15 @@ const check = (text, over = catalog) => checkSheet(parseSheet(text), { roles, de
 const PANEL = "interrogate reviewers";
 
 describe("parseEntry", () => {
+  test("keeps a Pi model ID that has its own provider prefix", () => {
+    expect(parseEntry("pi/openai-codex/gpt-6.1-sol thinking=medium")).toEqual({
+      providerInstanceId: "pi",
+      model: "openai-codex/gpt-6.1-sol",
+      options: { thinking: "medium" },
+    });
+    expect(family("openai-codex/gpt-6.1-sol")).toBe(family("gpt-6.1-sol"));
+  });
+
   test("maps an entry onto a delegate_task target", () => {
     expect(parseEntry(" codex/gpt-6.1-sol reasoningEffort=xhigh serviceTier=priority ")).toEqual({
       providerInstanceId: "codex",
