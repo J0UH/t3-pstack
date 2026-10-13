@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 
 import { loadLeadLines, loadModels, noteSkills, parseModels, stampLeadLine } from "../tools/generate.mjs";
 import { RUNTIMES } from "../tools/runtimes.mjs";
-import { checkSheet, parseEntry, parseSheet } from "../plugins/pstack/skills/setup-pstack/scripts/t3-sheet.mjs";
+import { checkSheet, family, parseEntry, parseSheet } from "../plugins/pstack/skills/setup-pstack/scripts/t3-sheet.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const script = join(root, "plugins/pstack/skills/setup-pstack/scripts/t3-sheet.mjs");
@@ -34,6 +34,21 @@ describe("parseEntry", () => {
     expect(parseEntry("inherit-parent")).toBeNull();
     expect(parseEntry("auto")).toBeNull();
     expect(() => parseEntry("inherit-parent effort=high")).toThrow("inherit-parent takes no options");
+  });
+
+  test("splits at the first slash, so an OpenCode model ID keeps its own", () => {
+    expect(parseEntry("opencode/openrouter/x-ai/grok-4.7 reasoningEffort=high")).toEqual({
+      providerInstanceId: "opencode",
+      model: "openrouter/x-ai/grok-4.7",
+      options: { reasoningEffort: "high" },
+    });
+    expect(() => parseEntry("opencode/openrouter/")).toThrow("does not start with <providerInstanceId>/<modelId>");
+  });
+
+  test("a route prefix in the model ID does not decide its family", () => {
+    expect(family("openrouter/x-ai/grok-4.7")).toBe("grok");
+    expect(family("openrouter/anthropic/claude-opus-5-5")).toBe("claude");
+    expect(family("gpt-6.1-sol")).toBe("gpt");
   });
 
   test("rejects a bare alias, an @level, and a repeated option", () => {
