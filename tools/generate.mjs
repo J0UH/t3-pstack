@@ -73,7 +73,6 @@ const PROMPT_RUNTIMES = RUNTIMES.filter((runtime) => runtime.prompts);
 const VERSIONED_MANIFESTS = [
   ".claude-plugin/marketplace.json",
   `${PLUGIN}/.claude-plugin/plugin.json`,
-  `${PLUGIN}/plugin.json`,
   ...RUNTIMES.flatMap((runtime) => runtime.manifest ?? []),
 ];
 
