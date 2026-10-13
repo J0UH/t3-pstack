@@ -24,6 +24,7 @@ This plugin is a port of upstream MIT-licensed work. The port's modifications an
 | `plugins/pstack/skills/correct/` (v0.15.9 addition) | [cursor/plugins/pstack @ e43c7ee](https://github.com/cursor/plugins/tree/e43c7ee/pstack) | (c) 2026 Lauren Tan | MIT | [LICENSE](LICENSE) |
 | `plugins/pstack/skills/poteto-help/` (v0.15.13 addition) | [cursor/plugins/pstack @ 2cbf585](https://github.com/cursor/plugins/tree/2cbf585/pstack) | (c) 2026 Lauren Tan | MIT | [LICENSE](LICENSE) |
 | `plugins/pstack/skills/ketchup/` (v0.15.17 addition) | [cursor/plugins/pstack @ 978ca6e](https://github.com/cursor/plugins/tree/978ca6e/pstack) | (c) 2026 Lauren Tan | MIT | [LICENSE](LICENSE) |
+| `plugins/pstack/skills/poteto-mode/scripts/resolve-codex-transcript` and `resolve-codex-transcript.ts` (verbatim), `tests/resolve-codex-transcript.test.mjs` (ported from its `resolve-codex-transcript.test.ts`) (t3-pstack 1.0.13 addition) | [ericlitman/open-pstack @ c5c8e23](https://github.com/ericlitman/open-pstack/tree/c5c8e237c324359a3d1929037da78fe66da3d1ed/plugins/pstack/skills/poteto-mode/scripts), [PR #151](https://github.com/ericlitman/open-pstack/pull/151) | (c) 2026 Eric A. Litman and Donncha O'Toole | MIT | [LICENSE](LICENSE) |
 
 ## What changed in the port
 

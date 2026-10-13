@@ -1,7 +1,7 @@
 // t3-tools.md is port-only, but the watch-pr it hands agents is synced from
 // upstream, so a merge can rename a flag the mapping still names.
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -56,5 +56,20 @@ describe("the T3 mapping's role names", () => {
 
   test("are all roles models.json declares", () => {
     expect(named.filter((role) => !roles.has(role))).toEqual([]);
+  });
+});
+
+// The skill validator resolves only relative paths, so a moved file behind a
+// `<plugin>/` path, such as reflect's Codex resolver, would leave the mapping
+// pointing at nothing.
+describe("the T3 mapping's plugin paths", () => {
+  const paths = [...mapping.matchAll(/<plugin>\/([\w./-]+)(?=[`"\s])/g)].map((m) => m[1]);
+
+  test("include the Codex transcript resolver, so the check below cannot pass on zero paths", () => {
+    expect(paths).toContain("skills/poteto-mode/scripts/resolve-codex-transcript");
+  });
+
+  test("all exist in the plugin", () => {
+    expect(paths.filter((path) => !existsSync(join(root, "plugins/pstack", path)))).toEqual([]);
   });
 });

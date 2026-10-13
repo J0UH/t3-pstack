@@ -95,6 +95,19 @@ Prove UI behavior on the real surface and put the proof in the thread.
 
 The evidence is the artifact these tools return, never your description of it. A live verifier lane that a child runs opens its own tab with `preview_open`, `reuseExistingTab: false`, and `open: false` unless the user should watch, and passes the returned `tabId` on every call.
 
+## Transcripts
+
+Reflect's step 1 finds this conversation's transcript where the thread's own host keeps it.
+
+- **Claude Code thread.** Run step 1's finder as written. Its command reads the projects directory under `CLAUDE_CONFIG_DIR`, so a provider instance with its own config home finds its own transcripts.
+- **Codex thread.** Codex exports this thread's ID to every shell command as `CODEX_THREAD_ID`. Pass it to the resolver, and never search by chat title or time:
+
+  ```bash
+  "<plugin>/skills/poteto-mode/scripts/resolve-codex-transcript" "$CODEX_THREAD_ID"
+  ```
+
+  It looks up that exact ID in the `threads` table of the `state_*.sqlite` index in `$CODEX_HOME`, or `~/.codex` when that is unset or empty. It checks that the rollout is inside that home's `sessions/` and belongs to this thread, then reads at most 500 records, 2 MiB, or one 256 KiB record to find the first user message, skipping the injected AGENTS.md and environment context. On success it exits 0 and prints the rollout `path` and the opening message's `line`, `record_type`, `characters`, and `sha256`, never its text. Pass that path only when `characters`, a count of Unicode code points, and `sha256`, a hash of the UTF-8 text, match this conversation's opening prompt. When it exits 1 with an `unresolved` reason, or either value differs, pass step 1's digest.
+
 ## Playbooks
 
 - **Babysit.** *The watch* is T3's `watch_pull_request`. *The watcher* is the bare `watch-pr`, which gives every verdict. The watch wakes the thread only on a failed check, passing required checks, a new comment or review from another account, a conflict, or a close, so babysitting uses it only to wait for a human review. Every other wait loops the watcher inside the turn, in place of playbook step 6's `/loop`. A user Stop interrupts that turn, and nothing outlives it. Where playbook step 6 says to rearm the watcher, run it again in the same turn. `watch-pr` holds READY until review activity settles (`--settle`, default 300s; an `eyes` reaction holds it up to 30 minutes after the latest push, opening, or ready for review), so no per-bot rules are needed.
@@ -138,7 +151,7 @@ Every skill below carries a pointer to this file under its heading. Read its row
 | `show-me-your-work` | The handback reviewer is a `delegate_task` on a family other than the one that did the work. Each decision row that delegated work names the child's provider, model, and `taskId`. Check the log against `t3_thread_read` of this thread and its children. |
 | `how` | Explorers and the explainer are `delegate_task` calls with the read-only sentence. |
 | `why` | Investigators and the synthesizer are `delegate_task` calls. Dispatch the synthesizer after every investigator's completion has arrived. |
-| `reflect` | The three reviewers and the synthesizer are `delegate_task` calls. Find and read the transcript per Find an earlier conversation in [Tool actions](#tool-actions). |
+| `reflect` | The three reviewers and the synthesizer are `delegate_task` calls. Step 1 finds the transcript per [Transcripts](#transcripts). |
 | `recall` | Search and read threads per Find an earlier conversation in [Tool actions](#tool-actions), with `t3_thread_list` for recent threads, child threads included. |
 | `ketchup` | Read the state of delegated children with `task_status`. Find this thread's pull requests with `list_thread_pull_requests`, which reports only their last known host state, and read each one's current CI, review, and merge state with the Babysit `check` read in [Playbooks](#playbooks), `watch-pr --pr <n> --status-only --timeout 120 --max-query-errors 2`. When the `html_render` tool is available, show the before-and-after visuals as one HTML page through it, checked first with `html_preview`, and keep the reply to what the page does not say. Screenshots and recordings follow [UI evidence](#ui-evidence). |
 | `teach` | Running `how` and `why` in parallel is two `delegate_task` calls. Show running behavior through [UI evidence](#ui-evidence). |
