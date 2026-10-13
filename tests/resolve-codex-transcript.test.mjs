@@ -1,7 +1,6 @@
 // Ported from open-pstack's resolve-codex-transcript.test.ts (ericlitman/open-pstack#151).
 import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -21,11 +20,11 @@ import { dirname, join, relative } from "node:path";
 const SCRIPTS = join(import.meta.dir, "../plugins/pstack/skills/poteto-mode/scripts");
 const RESOLVER = join(SCRIPTS, "resolve-codex-transcript.ts");
 const LAUNCHER = join(SCRIPTS, "resolve-codex-transcript");
+const MAPPING = readFileSync(join(import.meta.dir, "../plugins/pstack/skills/poteto-mode/references/t3-tools.md"), "utf8");
 const CHAT = "00000000-1111-2222-3333-444444444444";
 const OTHER = "00000000-1111-2222-3333-555555555555";
 const OPENING = "Reflect on this synthetic request.";
 
-const sha256 = (text) => createHash("sha256").update(text).digest("hex");
 const metadata = (chat = CHAT) => ({ type: "session_meta", payload: { id: chat } });
 const user = (text = OPENING) => ({
   type: "response_item",
@@ -97,7 +96,7 @@ beforeEach(() => {
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 describe("resolve-codex-transcript", () => {
-  it("finds the opening message after metadata in a redirected home without writing", () => {
+  it("resolves the rollout in a redirected home without writing or printing its text", () => {
     writeRecords([
       metadata(),
       { type: "event_msg", payload: { type: "task_started" } },
@@ -107,38 +106,9 @@ describe("resolve-codex-transcript", () => {
     const before = snapshot();
     const { code, result } = run();
     expect(code).toBe(0);
-    expect(result).toEqual({
-      status: "resolved",
-      chat_id: CHAT,
-      path: rollout,
-      opening_user_message: {
-        line: 4,
-        record_type: "response_item",
-        characters: OPENING.length,
-        sha256: sha256(OPENING),
-      },
-    });
+    expect(result).toEqual({ status: "resolved", chat_id: CHAT, path: rollout });
     expect(JSON.stringify(result)).not.toContain(OPENING);
     expect(snapshot()).toEqual(before);
-  });
-
-  it("skips injected AGENTS.md and environment context, including the real header", () => {
-    const agents = user("# AGENTS.md instructions for /work/repo\n\n<INSTRUCTIONS>\nPrivate\n</INSTRUCTIONS>");
-    const legacy = user("# AGENTS.md instructions\n<INSTRUCTIONS>Private</INSTRUCTIONS>");
-    legacy.payload.content.push({
-      type: "input_text",
-      text: "<environment_context>private</environment_context>",
-    });
-    writeRecords([metadata(), agents, legacy, user()]);
-    const { code, result } = run();
-    expect(code).toBe(0);
-    expect(result.opening_user_message.line).toBe(4);
-  });
-
-  it("does not treat a user message that only mentions AGENTS.md as injected context", () => {
-    writeRecords([metadata(), user("# AGENTS.md instructions are wrong here")]);
-    const { result } = run();
-    expect(result.opening_user_message.sha256).toBe(sha256("# AGENTS.md instructions are wrong here"));
   });
 
   it("uses $HOME/.codex when CODEX_HOME is unset or empty", () => {
@@ -197,21 +167,75 @@ describe("resolve-codex-transcript", () => {
     expectUnresolved("index_missing");
   });
 
-  it("rejects ambiguous indexes", () => {
-    index("state_6.sqlite");
-    expectUnresolved("index_ambiguous");
+  it("uses the newest index version that opens as the thread index", () => {
+    const outside = join(root, "private.jsonl");
+    writeRecords([metadata(), user()], outside);
+    writeFileSync(join(home, "state_4.sqlite"), "stale unreadable index");
+    index("state_9.sqlite", [[CHAT, outside]]);
+    index("state_10.sqlite");
+    const other = new Database(join(home, "state_11.sqlite"));
+    other.run("CREATE TABLE unrelated (private_value TEXT)");
+    other.close();
+    expect(run().result.path).toBe(rollout);
+    unlinkSync(join(home, "state_10.sqlite"));
+    expectUnresolved("rollout_path_scope");
   });
 
   it("rejects too many index files", () => {
     for (let number = 0; number < 8; number++) {
-      writeFileSync(join(home, `state_x${number}.sqlite`), "");
+      writeFileSync(join(home, `state_${20 + number}.sqlite`), "");
     }
     expectUnresolved("index_count_budget");
   });
 
   it("rejects an unreadable index without exposing parse errors", () => {
-    writeFileSync(join(home, "state_0.sqlite"), "unrelated private sentinel");
+    writeFileSync(join(home, "state_5.sqlite"), "unrelated private sentinel");
     expectUnresolved("index_unreadable");
+  });
+
+  it("reads a WAL index whose rows are still in the -wal file", () => {
+    unlinkSync(join(home, "state_5.sqlite"));
+    const writer = new Database(join(home, "state_5.sqlite"));
+    writer.run("PRAGMA journal_mode = WAL");
+    writer.run("CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT NOT NULL)");
+    writer.run("INSERT INTO threads VALUES (?, ?)", [CHAT, rollout]);
+    try {
+      expect(existsSync(join(home, "state_5.sqlite-wal"))).toBe(true);
+      expect(run().result.path).toBe(rollout);
+    } finally {
+      writer.close();
+    }
+  });
+
+  it("reads a closed WAL index whose -wal and -shm files are gone, without creating them", () => {
+    unlinkSync(join(home, "state_5.sqlite"));
+    const writer = new Database(join(home, "state_5.sqlite"));
+    writer.run("PRAGMA journal_mode = WAL");
+    writer.run("CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT NOT NULL)");
+    writer.run("INSERT INTO threads VALUES (?, ?)", [CHAT, rollout]);
+    writer.close();
+    rmSync(join(home, "state_5.sqlite-wal"), { force: true });
+    rmSync(join(home, "state_5.sqlite-shm"), { force: true });
+    expect(readFileSync(join(home, "state_5.sqlite"))[18]).toBe(2);
+    const before = snapshot();
+    expect(run().result.path).toBe(rollout);
+    expect(snapshot()).toEqual(before);
+  });
+
+  it("reads the index from config.toml's sqlite_home, else CODEX_SQLITE_HOME", () => {
+    const elsewhere = join(root, "sqlite home");
+    const empty = join(root, "empty");
+    mkdirSync(elsewhere);
+    mkdirSync(empty);
+    renameSync(join(home, "state_5.sqlite"), join(elsewhere, "state_5.sqlite"));
+    expectUnresolved("index_missing");
+    expect(run([CHAT], { CODEX_HOME: home, CODEX_SQLITE_HOME: ` ${elsewhere} ` }).result.path).toBe(rollout);
+    writeFileSync(join(home, "config.toml"), 'model = "m"\nsqlite_home = "../sqlite home"\n');
+    expect(run([CHAT], { CODEX_HOME: home, CODEX_SQLITE_HOME: empty }).result.path).toBe(rollout);
+    writeFileSync(join(home, "config.toml"), 'sqlite_home = "~/sqlite home"\n');
+    expect(run([CHAT], { CODEX_HOME: home, HOME: root }).result.path).toBe(rollout);
+    writeFileSync(join(home, "config.toml"), "sqlite_home = 5\n");
+    expectUnresolved("config_unreadable");
   });
 
   it("rejects an index symlink that escapes the home", () => {
@@ -222,18 +246,10 @@ describe("resolve-codex-transcript", () => {
   });
 
   it("rejects malformed records without printing their bytes", () => {
-    writeFileSync(rollout, JSON.stringify(metadata()) + '\n{"private sentinel":\n');
-    expectUnresolved("rollout_malformed");
-    for (const tail of [Buffer.from("[]\n"), Buffer.from([0xff, 0x0a])]) {
-      writeFileSync(rollout, Buffer.concat([Buffer.from(JSON.stringify(metadata()) + "\n"), tail]));
+    for (const head of [Buffer.from('{"private sentinel":\n'), Buffer.from("[]\n"), Buffer.from([0xff, 0x0a])]) {
+      writeFileSync(rollout, Buffer.concat([head, Buffer.from(JSON.stringify(metadata()) + "\n")]));
       expectUnresolved("rollout_malformed");
     }
-    writeFileSync(
-      rollout,
-      JSON.stringify(metadata()) +
-        '\n{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"\\ud800"}]}}\n',
-    );
-    expectUnresolved("rollout_malformed");
   });
 
   it("rejects a rollout owned by another chat", () => {
@@ -241,7 +257,16 @@ describe("resolve-codex-transcript", () => {
     expectUnresolved("rollout_owner_mismatch");
   });
 
-  it("requires ownership before user content", () => {
+  it("takes a forked rollout's first session_meta as its owner, as Codex does", () => {
+    const fork = { type: "session_meta", payload: { id: CHAT, forked_from_id: OTHER } };
+    const history = { type: "compacted", payload: { pad: "x".repeat(300 * 1024) } };
+    writeRecords([fork, metadata(OTHER), history, user()]);
+    expect(run().result).toMatchObject({ status: "resolved", path: rollout });
+    writeRecords([metadata(OTHER), fork, user()]);
+    expectUnresolved("rollout_owner_mismatch");
+  });
+
+  it("rejects a rollout without session_meta", () => {
     writeRecords([user()]);
     expectUnresolved("rollout_owner_unverified");
   });
@@ -274,22 +299,6 @@ describe("resolve-codex-transcript", () => {
     expectUnresolved("rollout_unavailable");
   });
 
-  it("accepts event user messages and joins text parts", () => {
-    writeRecords([metadata(), { type: "event_msg", payload: { type: "user_message", message: OPENING } }]);
-    expect(run().result.opening_user_message.record_type).toBe("event_msg");
-    const split = user("Reflect on ");
-    split.payload.content.push({ type: "input_text", text: "this synthetic request." });
-    writeRecords([metadata(), split]);
-    expect(run().result.opening_user_message.sha256).toBe(sha256(OPENING));
-  });
-
-  it("reports missing and unsupported opening messages", () => {
-    writeRecords([metadata()]);
-    expectUnresolved("opening_message_missing");
-    writeRecords([metadata(), user("")]);
-    expectUnresolved("opening_message_unsupported");
-  });
-
   it("rejects an invalid chat ID and extra arguments", () => {
     expectUnresolved("chat_id_invalid", ["private title"]);
     expectUnresolved("usage", [CHAT, "--max-lines"]);
@@ -297,14 +306,14 @@ describe("resolve-codex-transcript", () => {
 
   it("stops at 500 records", () => {
     const filler = { type: "event_msg", payload: { type: "token_count" } };
-    writeRecords([metadata(), ...Array(498).fill(filler), user()]);
-    expect(run().result.opening_user_message.line).toBe(500);
-    writeRecords([metadata(), ...Array(499).fill(filler), user()]);
+    writeRecords([...Array(499).fill(filler), metadata()]);
+    expect(run().result.path).toBe(rollout);
+    writeRecords([...Array(500).fill(filler), metadata()]);
     expectUnresolved("rollout_record_budget");
   });
 
   it("stops at a record over 256 KiB", () => {
-    writeRecords([metadata(), { type: "event_msg", payload: { pad: "x".repeat(256 * 1024) } }, user()]);
+    writeRecords([{ type: "event_msg", payload: { pad: "x".repeat(256 * 1024) } }, metadata()]);
     expectUnresolved("rollout_line_budget");
   });
 
@@ -334,9 +343,21 @@ describe("resolve-codex-transcript", () => {
     expect(launched.exitCode).toBe(0);
   });
 
+  it("runs as t3-tools.md gives the command, from a plugin path with a space", () => {
+    const command = MAPPING.match(/^ *("<plugin>\/skills\/poteto-mode\/scripts\/resolve-codex-transcript" .*)$/m)?.[1];
+    if (command === undefined) throw new Error("t3-tools.md has no resolver command");
+    const plugin = join(root, "plugin install");
+    symlinkSync(join(import.meta.dir, "../plugins/pstack"), plugin);
+    const env = { PATH: process.env.PATH, HOME: root, CODEX_HOME: home, CODEX_THREAD_ID: CHAT };
+    const launched = Bun.spawnSync(["sh", "-c", command.replace("<plugin>", plugin)], { env });
+    expect(launched.stderr.toString()).toBe("");
+    expect(JSON.parse(launched.stdout.toString())).toMatchObject({ status: "resolved", path: rollout });
+    expect(launched.exitCode).toBe(0);
+  });
+
   it("stops at 2 MiB in total", () => {
     const record = { type: "event_msg", payload: { pad: "x".repeat(250 * 1024) } };
-    writeRecords([metadata(), ...Array(9).fill(record), user()]);
+    writeRecords([...Array(9).fill(record), metadata()]);
     expectUnresolved("rollout_byte_budget");
   });
 });

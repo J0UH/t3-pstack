@@ -20,7 +20,3 @@ check-plan.test.ts
 # Upstream stopped formatting fakes.test-helper.ts with Prettier at 997ffc7;
 # keeping its wrapping keeps the fork small.
 watch-pr/fakes.test-helper.ts
-
-# Copied verbatim from open-pstack, which does not run Prettier; keeping its
-# wrapping keeps the file identical to its source.
-resolve-codex-transcript.ts

@@ -99,14 +99,14 @@ The evidence is the artifact these tools return, never your description of it. A
 
 Reflect's step 1 finds this conversation's transcript where the thread's own host keeps it.
 
-- **Claude Code thread.** Run step 1's finder as written. Its command reads the projects directory under `CLAUDE_CONFIG_DIR`, so a provider instance with its own config home finds its own transcripts.
+- **Claude Code thread.** Run step 1's finder as written. Its command passes `CLAUDE_CODE_SESSION_ID`, so a `delegate_task` child or a forked session that shares the opening prompt never stands in for this one, and it reads the projects directory under `CLAUDE_CONFIG_DIR`, so a provider instance with its own config home finds its own transcripts.
 - **Codex thread.** Codex exports this thread's ID to every shell command as `CODEX_THREAD_ID`. Pass it to the resolver, and never search by chat title or time:
 
   ```bash
   "<plugin>/skills/poteto-mode/scripts/resolve-codex-transcript" "$CODEX_THREAD_ID"
   ```
 
-  It looks up that exact ID in the `threads` table of the `state_*.sqlite` index in `$CODEX_HOME`, or `~/.codex` when that is unset or empty. It checks that the rollout is inside that home's `sessions/` and belongs to this thread, then reads at most 500 records, 2 MiB, or one 256 KiB record to find the first user message, skipping the injected AGENTS.md and environment context. On success it exits 0 and prints the rollout `path` and the opening message's `line`, `record_type`, `characters`, and `sha256`, never its text. Pass that path only when `characters`, a count of Unicode code points, and `sha256`, a hash of the UTF-8 text, match this conversation's opening prompt. When it exits 1 with an `unresolved` reason, or either value differs, pass step 1's digest.
+  It finds the index directory as Codex 0.162.1 does, from `sqlite_home` in the home's `config.toml`, else `CODEX_SQLITE_HOME`, else the home, which is `$CODEX_HOME`, or `~/.codex` when that is unset or empty. It looks up that exact ID in the `threads` table of the newest `state_<n>.sqlite` there that opens, without writing beside it. It checks that the rollout is inside the home's `sessions/` and that its first `session_meta` is this thread's, since a fork copies its parent's after its own, reading at most 500 records, 2 MiB, or one 256 KiB record to reach it. On success it exits 0 and prints JSON whose `path` is the transcript to pass. The exact ID already proves it is this thread's, so compare nothing. On a non-zero exit, pass step 1's digest.
 
 ## Playbooks
 

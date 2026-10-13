@@ -1,11 +1,27 @@
 #!/usr/bin/env bun
-// Resolve one known Codex chat ID to its rollout file and opening user message
-// metadata. Prints bounded JSON and never prints transcript text.
-import { Database } from "bun:sqlite";
-import { createHash } from "node:crypto";
-import { closeSync, openSync, readdirSync, readSync, realpathSync, statSync } from "node:fs";
+// Resolve one known Codex chat ID to its rollout file. Prints bounded JSON and
+// never prints transcript text.
+// From open-pstack (Eric A. Litman and Donncha O'Toole), modified for
+// t3-pstack; NOTICE.md lists the changes.
+import { constants, Database } from "bun:sqlite";
+import {
+  closeSync,
+  existsSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  readSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, sep } from "node:path";
+import {
+  dirname,
+  isAbsolute,
+  join,
+  resolve as resolvePath,
+  sep,
+} from "node:path";
 
 const MAX_INDEXES = 8;
 const MAX_PATH = 4096;
@@ -13,7 +29,9 @@ const MAX_RECORDS = 500;
 const MAX_BYTES = 2 * 1024 * 1024;
 const MAX_RECORD_BYTES = 256 * 1024;
 const CHAT_ID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
-const INDEX_NAME = /^state_[^/]*\.sqlite$/;
+const INDEX_NAME = /^state_(\d+)\.sqlite$/;
+// Bun's Linux build reads `file:` URIs only when the open asks for them.
+const OPEN_FLAGS = constants.SQLITE_OPEN_READONLY | constants.SQLITE_OPEN_URI;
 
 class Unresolved extends Error {}
 
@@ -31,26 +49,56 @@ function codexHome(): string {
   }
 }
 
-function indexFiles(home: string): string[] {
+// Resolves `path` as Codex does: a leading `~` is the home directory, and a
+// relative path is relative to `base`.
+function directoryAt(base: string, path: string): string {
+  const expanded =
+    path === "~"
+      ? homedir()
+      : path.startsWith("~/")
+        ? join(homedir(), path.slice(2))
+        : path;
+  try {
+    return realpathSync(resolvePath(base, expanded));
+  } catch {
+    throw new Unresolved("index_directory_unavailable");
+  }
+}
+
+// Codex 0.162.1 keeps the index in config.toml's `sqlite_home`, relative to the
+// config's directory, else in CODEX_SQLITE_HOME, relative to the working
+// directory, else in the home itself.
+function indexDirectory(home: string): string {
+  let configured: unknown;
+  try {
+    const config = Bun.TOML.parse(
+      readFileSync(join(home, "config.toml"), "utf8")
+    );
+    configured = (config as { sqlite_home?: unknown }).sqlite_home;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw new Unresolved("config_unreadable");
+    }
+  }
+  if (typeof configured === "string") return directoryAt(home, configured);
+  if (configured !== undefined) throw new Unresolved("config_unreadable");
+  const fromEnvironment = process.env.CODEX_SQLITE_HOME?.trim();
+  return fromEnvironment ? directoryAt(process.cwd(), fromEnvironment) : home;
+}
+
+// Newest schema version first: a Codex upgrade leaves the older index behind.
+function indexFiles(directory: string): string[] {
   let names: string[];
   try {
-    names = readdirSync(home).filter((name) => INDEX_NAME.test(name)).sort();
+    names = readdirSync(directory).filter((name) => INDEX_NAME.test(name));
   } catch {
     throw new Unresolved("index_directory_unavailable");
   }
   if (names.length > MAX_INDEXES) throw new Unresolved("index_count_budget");
-  return names.map((name) => {
-    try {
-      const path = realpathSync(join(home, name));
-      if (dirname(path) !== home || !statSync(path).isFile()) {
-        throw new Unresolved("index_path_scope");
-      }
-      return path;
-    } catch (error) {
-      if (error instanceof Unresolved) throw error;
-      throw new Unresolved("index_unreadable");
-    }
-  });
+  const version = (name: string) => Number(INDEX_NAME.exec(name)![1]);
+  return names
+    .sort((a, b) => version(b) - version(a))
+    .map((name) => join(directory, name));
 }
 
 // The index is the `threads` table keyed by `id` alone, with a `rollout_path` column.
@@ -67,32 +115,61 @@ function threadIndex(database: Database): boolean {
   );
 }
 
-function indexedRollout(home: string, chatId: string): string {
-  const databases: Database[] = [];
+// Codex leaves the WAL-mode index without its -wal and -shm files once no
+// process holds it. A read-only open of that index then creates both files
+// beside it, or fails where it cannot, so an index with no -wal file, whose
+// rows are all in the database file, opens as immutable. A live index opens
+// read-only to see the rows in its -wal file, and as immutable if that fails.
+function openIndex(path: string): Database | "not_index" | "unreadable" {
+  let real: string;
   try {
-    const indexes: Database[] = [];
-    for (const path of indexFiles(home)) {
-      const database = new Database(path, { readonly: true });
-      databases.push(database);
-      if (threadIndex(database)) indexes.push(database);
+    real = realpathSync(path);
+  } catch {
+    return "unreadable";
+  }
+  if (dirname(real) !== dirname(path) || !statSync(real).isFile()) {
+    throw new Unresolved("index_path_scope");
+  }
+  const immutable = `file:${real.split("/").map(encodeURIComponent).join("/")}?immutable=1`;
+  const live = existsSync(`${real}-wal`);
+  for (const name of live ? [real, immutable] : [immutable]) {
+    let database: Database | undefined;
+    try {
+      database = new Database(name, OPEN_FLAGS);
+      if (threadIndex(database)) return database;
+      database.close();
+      return "not_index";
+    } catch {
+      database?.close();
     }
-    if (indexes.length === 0) throw new Unresolved("index_missing");
-    if (indexes.length > 1) throw new Unresolved("index_ambiguous");
-    const row = indexes[0]!
-      .query("SELECT rollout_path FROM threads WHERE id = ?1")
-      .get(chatId) as { rollout_path: unknown } | null;
+  }
+  return "unreadable";
+}
+
+function indexedRollout(home: string, chatId: string): string {
+  let reason = "index_missing";
+  for (const path of indexFiles(indexDirectory(home))) {
+    const index = openIndex(path);
+    if (index === "unreadable") reason = "index_unreadable";
+    if (typeof index === "string") continue;
+    let row: { rollout_path: unknown } | null;
+    try {
+      row = index
+        .query("SELECT rollout_path FROM threads WHERE id = ?1")
+        .get(chatId) as { rollout_path: unknown } | null;
+    } catch {
+      throw new Unresolved("index_unreadable");
+    } finally {
+      index.close();
+    }
     if (!row) throw new Unresolved("chat_missing");
     const rollout = row.rollout_path;
     if (typeof rollout !== "string" || !rollout || rollout.length > MAX_PATH) {
       throw new Unresolved("rollout_path_invalid");
     }
     return rollout;
-  } catch (error) {
-    if (error instanceof Unresolved) throw error;
-    throw new Unresolved("index_unreadable");
-  } finally {
-    for (const database of databases) database.close();
   }
+  throw new Unresolved(reason);
 }
 
 function scopedRollout(home: string, indexed: string): string {
@@ -105,9 +182,14 @@ function scopedRollout(home: string, indexed: string): string {
   } catch {
     throw new Unresolved("rollout_unavailable");
   }
-  if (!path.startsWith(sessions + sep)) throw new Unresolved("rollout_path_scope");
+  if (!path.startsWith(sessions + sep))
+    throw new Unresolved("rollout_path_scope");
   try {
-    if (!path.endsWith(".jsonl") || path.length > MAX_PATH || !statSync(path).isFile()) {
+    if (
+      !path.endsWith(".jsonl") ||
+      path.length > MAX_PATH ||
+      !statSync(path).isFile()
+    ) {
       throw new Unresolved("rollout_path_invalid");
     }
   } catch (error) {
@@ -115,45 +197,6 @@ function scopedRollout(home: string, indexed: string): string {
     throw new Unresolved("rollout_unavailable");
   }
   return path;
-}
-
-// Returns the user text and its parts, or null when the record is not user input.
-function userText(record: JsonObject): { text: string; parts: string[] } | null {
-  const payload = record.payload;
-  if (!isObject(payload)) return null;
-  if (record.type === "event_msg" && payload.type === "user_message") {
-    const text = payload.message;
-    if (typeof text !== "string" || !text.trim()) {
-      throw new Unresolved("opening_message_unsupported");
-    }
-    return { text, parts: [text] };
-  }
-  if (record.type !== "response_item" || payload.role !== "user") return null;
-  if (payload.type !== "message" || !Array.isArray(payload.content)) {
-    throw new Unresolved("opening_message_unsupported");
-  }
-  const parts: string[] = [];
-  for (const part of payload.content) {
-    if (!isObject(part)) throw new Unresolved("opening_message_unsupported");
-    if (part.type === "input_text" || part.type === "text") {
-      if (typeof part.text !== "string") throw new Unresolved("opening_message_unsupported");
-      parts.push(part.text);
-    }
-  }
-  const text = parts.join("");
-  if (!text.trim()) throw new Unresolved("opening_message_unsupported");
-  return { text, parts };
-}
-
-// Codex injects AGENTS.md as `# AGENTS.md instructions for <dir>` and the environment as a
-// tagged block, both in user-role records ahead of the actual request.
-function injectedContext(parts: string[]): boolean {
-  return parts.every(
-    (part) =>
-      (/^# AGENTS\.md instructions(?: for [^\n]*)?\n/.test(part) &&
-        part.includes("<INSTRUCTIONS>")) ||
-      part.startsWith("<environment_context>")
-  );
 }
 
 // Reads one byte past the total limit so an oversized file is detected, not truncated.
@@ -164,7 +207,13 @@ function readPrefix(path: string): Buffer {
     const buffer = Buffer.alloc(MAX_BYTES + 1);
     let length = 0;
     while (length < buffer.length) {
-      const read = readSync(descriptor, buffer, length, buffer.length - length, length);
+      const read = readSync(
+        descriptor,
+        buffer,
+        length,
+        buffer.length - length,
+        length
+      );
       if (read === 0) break;
       length += read;
     }
@@ -191,41 +240,32 @@ function parseRecord(raw: Buffer): JsonObject | null {
   return record;
 }
 
-function openingMessage(path: string, chatId: string) {
+// Codex takes a rollout's first session_meta as its own; a fork copies its
+// parent's after it.
+function verifyOwner(path: string, chatId: string): void {
   const buffer = readPrefix(path);
-  let owned = false;
   let consumed = 0;
   for (let line = 1; line <= MAX_RECORDS; line++) {
     const allowance = Math.min(MAX_RECORD_BYTES, MAX_BYTES - consumed);
     if (allowance <= 0) throw new Unresolved("rollout_byte_budget");
-    if (consumed === buffer.length) throw new Unresolved("opening_message_missing");
+    if (consumed === buffer.length)
+      throw new Unresolved("rollout_owner_unverified");
     const newline = buffer.indexOf(0x0a, consumed);
     const end = newline === -1 ? buffer.length : newline + 1;
     if (end - consumed > allowance) {
       throw new Unresolved(
-        allowance === MAX_RECORD_BYTES ? "rollout_line_budget" : "rollout_byte_budget"
+        allowance === MAX_RECORD_BYTES
+          ? "rollout_line_budget"
+          : "rollout_byte_budget"
       );
     }
     const record = parseRecord(buffer.subarray(consumed, end));
     consumed = end;
-    if (!record) continue;
-    if (record.type === "session_meta") {
-      if (!isObject(record.payload) || record.payload.id !== chatId) {
-        throw new Unresolved("rollout_owner_mismatch");
-      }
-      owned = true;
+    if (record?.type !== "session_meta") continue;
+    if (!isObject(record.payload) || record.payload.id !== chatId) {
+      throw new Unresolved("rollout_owner_mismatch");
     }
-    const candidate = userText(record);
-    if (!candidate) continue;
-    if (!owned) throw new Unresolved("rollout_owner_unverified");
-    if (injectedContext(candidate.parts)) continue;
-    if (!candidate.text.isWellFormed()) throw new Unresolved("rollout_malformed");
-    return {
-      line,
-      record_type: record.type,
-      characters: [...candidate.text].length,
-      sha256: createHash("sha256").update(candidate.text, "utf8").digest("hex"),
-    };
+    return;
   }
   throw new Unresolved("rollout_record_budget");
 }
@@ -234,12 +274,8 @@ function resolve(chatId: string) {
   if (!CHAT_ID.test(chatId)) throw new Unresolved("chat_id_invalid");
   const home = codexHome();
   const path = scopedRollout(home, indexedRollout(home, chatId));
-  return {
-    status: "resolved",
-    chat_id: chatId,
-    path,
-    opening_user_message: openingMessage(path, chatId),
-  };
+  verifyOwner(path, chatId);
+  return { status: "resolved", chat_id: chatId, path };
 }
 
 const args = process.argv.slice(2);
@@ -248,6 +284,8 @@ try {
   console.log(JSON.stringify(resolve(args[0]!)));
 } catch (error) {
   const reason = error instanceof Unresolved ? error.message : "internal_error";
-  console.log(JSON.stringify({ status: "unresolved", reason, fallback: "session_digest" }));
+  console.log(
+    JSON.stringify({ status: "unresolved", reason, fallback: "session_digest" })
+  );
   process.exitCode = 1;
 }
