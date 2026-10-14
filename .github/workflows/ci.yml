@@ -46,6 +46,8 @@ jobs:
         run: bun test --timeout 10000 tests/session-hook-windows.test.mjs
         env:
           PSTACK_REQUIRE_WINDOWS_HOOK: "1"
+      - name: Test the installer's CLI launch
+        run: bun test --timeout 30000 tests/install-cli.test.mjs
 
   forks:
     name: Fork registry

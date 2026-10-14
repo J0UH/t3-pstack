@@ -67,6 +67,7 @@ export function parseSheet(markdown) {
 // role with its `tier`, and the `alias` a released sheet may still use), its
 // tier defaults, and an `orchestrator_capabilities` catalog. A role with no
 // line runs on its tier's default, so that default must dispatch here too.
+// With no catalog, as in the installer's doctor, only the grammar is checked.
 export function checkSheet(sheet, { roles, defaults, catalog }) {
   const problems = [];
   const byRole = new Map(roles.flatMap((r) => [[r.role, r], ...(r.alias ? [[r.alias, r]] : [])]));
@@ -128,6 +129,7 @@ export function checkSheet(sheet, { roles, defaults, catalog }) {
 }
 
 function checkTarget({ providerInstanceId, model, options }, catalog) {
+  if (!catalog) return [];
   const at = `${providerInstanceId}/${model}`;
   const provider = catalog.providers.find((p) => p.providerInstanceId === providerInstanceId);
   if (!provider) return [`${at}: no provider instance "${providerInstanceId}" in this T3`];

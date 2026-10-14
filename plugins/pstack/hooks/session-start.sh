@@ -5,11 +5,11 @@ set -eu
 # Literal plugin paths, so a static reader of the hooks files can follow them.
 case "${1:-}" in
   claude)
-    sheet="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/t3-pstack-models.md"
+    home_sheet="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/t3-pstack-models.md"
     reader="${CLAUDE_PLUGIN_ROOT}/skills/setup-pstack/scripts/read-sheet.sh"
     ;;
   codex)
-    sheet="${CODEX_HOME:-$HOME/.codex}/t3-pstack-models.md"
+    home_sheet="${CODEX_HOME:-$HOME/.codex}/t3-pstack-models.md"
     reader="${CLAUDE_PLUGIN_ROOT}/skills/setup-pstack/scripts/read-sheet.sh"
     ;;
   *)
@@ -17,6 +17,11 @@ case "${1:-}" in
     exit 2
     ;;
 esac
+
+# One sheet per machine. Until the installer moves an older home's sheet
+# there, that home's sheet still counts.
+sheet="${XDG_CONFIG_HOME:-$HOME/.config}/t3-pstack/models.md"
+[ -f "$sheet" ] || sheet=$home_sheet
 
 # A sheet that cannot be decoded counts as missing, so injection stays on.
 if ! { [ -f "$sheet" ] && [ -r "$sheet" ] && normalized=$(sh "$reader" "$sheet"); }; then

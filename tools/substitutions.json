@@ -14,7 +14,7 @@
     },
     {
       "pattern": "- No `~/.cursor/rules/pstack-models.mdc` means `/setup-pstack` hasn't run for this user",
-      "replacement": "- No model sheet (`t3-pstack-models.md`, see `/setup-pstack`) means `/setup-pstack` hasn't run for this user",
+      "replacement": "- No model sheet (`~/.config/t3-pstack/models.md`, see `/setup-pstack`) means `/setup-pstack` hasn't run for this user",
       "rationale": "the T3 sheet replaces the Cursor rule (The sheet)",
       "files": "^skills/poteto-help/SKILL\\.md$"
     },

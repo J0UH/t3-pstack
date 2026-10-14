@@ -20,8 +20,9 @@
 //
 // Also validated: skill frontmatter, the skills tree's links,
 // the plugin layout, agent frontmatter, the Codex marketplace, and both hooks
-// files.
+// files against their pins in tools/frozen-hooks.json.
 
+import { execFileSync } from "node:child_process";
 import {
   existsSync,
   lstatSync,
@@ -41,7 +42,7 @@ import { Value } from "typebox/value";
 
 import { panelFamilies, parseEntry } from "../plugins/pstack/skills/setup-pstack/scripts/t3-sheet.mjs";
 import { applyRegions, parseFrontmatter, ROUTED_SKILL, t3Regions } from "./derive-t3.mjs";
-import { PLUGIN, SKILLS } from "./plugin.mjs";
+import { FROZEN_HOOKS, hookDigest, PLUGIN, SKILLS } from "./plugin.mjs";
 import { pathIsInside, validateSkillsTree, walk } from "./validate-skills.mjs";
 
 export { parseFrontmatter };
@@ -378,6 +379,60 @@ export function validateHooks(hooksJson, { statOf, file = "hooks/hooks.json", ro
   if (faults.length) throw new Error(`${file}:\n  ${faults.join("\n  ")}`);
 }
 
+// Codex trusts a plugin hook by a hash of its entry, and a Git marketplace
+// delivers a new entry at the next app-server start, so a changed hooks file
+// silently stops the hook in every home until the installer trusts it again.
+// Each hooks file is pinned with the release that last changed it, and that
+// release's CHANGES entry must tell users to rerun the installer. `shipped`
+// holds VERSION and the hooks files as origin/main has them, since main is
+// what the marketplaces deliver: a file that differs from main's changes in
+// this release, so its pin must name this release, and VERSION must be newer
+// than main's.
+export function frozenHookFaults({ pins, files, version, changelog, shipped }) {
+  const faults = Object.keys(files)
+    .filter((path) => !Object.hasOwn(pins, path))
+    .map((path) => `${path} has no pin in ${FROZEN_HOOKS}`);
+  const entry = changelog.split(/^## /m).find((section) => section.startsWith(`${version} `)) ?? "";
+  for (const [path, pin] of Object.entries(pins)) {
+    if (!Object.hasOwn(files, path)) {
+      faults.push(`${FROZEN_HOOKS} pins ${path}, which no manifest names`);
+      continue;
+    }
+    const digest = hookDigest(files[path]);
+    const changed = shipped.files[path] === undefined || hookDigest(shipped.files[path]) !== digest;
+    if (digest !== pin.sha256) {
+      faults.push(
+        `${path} changed, which stops its hook in every Codex home until the installer reruns. ` +
+          `Pin "sha256": "${digest}" and "changedIn": "${version}" in ${FROZEN_HOOKS}, ` +
+          `and tell users to rerun the installer in CHANGES.md's ${version} entry.`,
+      );
+    } else if (changed && Bun.semver.order(version, shipped.version) <= 0) {
+      faults.push(`${path} differs from origin/main, which ships ${shipped.version}, so this change needs a VERSION newer than that, not ${version}`);
+    } else if (changed && pin.changedIn !== version) {
+      faults.push(`${path} differs from origin/main, so its pin's "changedIn" must be ${version}, not ${pin.changedIn}`);
+    } else if (pin.changedIn === version && !/rerun the installer/i.test(entry)) {
+      faults.push(`${path} changes in ${version}, but CHANGES.md's ${version} entry does not tell users to rerun the installer`);
+    }
+  }
+  return faults;
+}
+
+// VERSION and `paths` as origin/main has them now, with undefined for a path
+// main lacks. It fetches main first, so a branch cut before main's latest
+// release is compared with that release and not with the merge-base.
+function shippedOnMain(root, paths) {
+  const git = (...args) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const main = "refs/remotes/origin/main";
+  try {
+    git("fetch", "--quiet", "--no-tags", "origin", `+refs/heads/main:${main}`);
+  } catch (err) {
+    throw new Error(`${FROZEN_HOOKS}: cannot fetch origin/main to compare the hooks files with: ${(err.stderr || err.message).trim()}`);
+  }
+  const listed = new Set(git("ls-tree", "-r", "--name-only", main, "--", "VERSION", ...paths).split("\n"));
+  const show = (path) => (listed.has(path) ? git("show", `${main}:${path}`) : undefined);
+  return { version: show("VERSION")?.trim(), files: Object.fromEntries(paths.map((path) => [path, show(path)])) };
+}
+
 // Every file the generator writes, as exact text by repo-relative path,
 // computed from the sources under `root` without writing. Any other entry in
 // an owned directory is an orphan. Throws when a source cannot be planned.
@@ -489,9 +544,22 @@ export function problems(root, models) {
     if (!existsSync(full) || !pathIsInside(realpathSync(pluginRoot), realpathSync(full))) return null;
     return statSync(full);
   };
-  for (const file of ["hooks/hooks.json", ...(codex?.hooks ? [codex.hooks.replace(/^\.\//, "")] : [])]) {
+  const hookFiles = ["hooks/hooks.json", ...(codex?.hooks ? [codex.hooks.replace(/^\.\//, "")] : [])];
+  for (const file of hookFiles) {
     attempt(() => validateHooks(readFileSync(join(pluginRoot, file), "utf8"), { statOf, file }));
   }
+  // A Codex manifest that does not parse names no hooks file to compare.
+  if (codex) attempt(() => {
+    const paths = hookFiles.map((file) => `${PLUGIN}/${file}`);
+    const faults = frozenHookFaults({
+      pins: JSON.parse(read(FROZEN_HOOKS)),
+      files: Object.fromEntries(paths.map((path) => [path, read(path)])),
+      version: read("VERSION").trim(),
+      changelog: read("CHANGES.md"),
+      shipped: shippedOnMain(root, paths),
+    });
+    if (faults.length) throw new Error(faults.join("\n"));
+  });
   return failures;
 }
 
