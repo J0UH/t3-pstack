@@ -311,7 +311,8 @@ export type ProgressVerdict =
             readonly pending: NonEmpty<PendingCheck>;
           }
         | S.SettleWait
-        | { readonly kind: "merge-queue"; readonly unmergedCount: number };
+        | { readonly kind: "merge-queue"; readonly unmergedCount: number }
+        | { readonly kind: "confirming-block" };
     })
   | (Progress<"ADVANCE", "queued-stack"> & {
       readonly merged: PrContext;
@@ -360,6 +361,7 @@ export type TimeoutVerdict = Terminal<"TIMEOUT", 5> & {
       }
     | S.SettleWait
     | { readonly kind: "status-unavailable"; readonly failure: QueryFailure }
+    | { readonly kind: "confirming-block" }
     | {
         readonly kind: "queued-stack";
         readonly frontier: PrContext;

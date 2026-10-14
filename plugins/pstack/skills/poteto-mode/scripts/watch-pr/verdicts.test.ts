@@ -1,8 +1,9 @@
 // Michael Denyer's watch-pr fixes from pstack-claude, carried by t3-pstack:
 // a PR that waits on a required review or another protection rule is not
-// READY (#95), a stale check fails instead of pending forever (#97), and a
+// READY (#95), a stale check fails instead of pending forever (#97), a
 // repository with no checks configured gets a verdict instead of retrying
-// forever (#151, #152, #153).
+// forever (#151, #152, #153), and a BLOCKED read stops the watcher only once
+// it has held for 60 seconds (#223).
 import { afterEach, describe, expect, it } from "bun:test";
 import { spawnSync } from "node:child_process";
 import {
@@ -15,7 +16,12 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type CliRuntime, main } from "./cli.ts";
-import { fakeReader, passingCheck, pendingCheck } from "./fakes.test-helper.ts";
+import {
+  type FakeReaderOptions,
+  fakeReader,
+  passingCheck,
+  pendingCheck,
+} from "./fakes.test-helper.ts";
 import {
   ChecksUnavailable,
   WatcherQueryError,
@@ -43,6 +49,7 @@ function tickingRuntime() {
   const stdout: string[] = [];
   return {
     now: () => now,
+    text: () => stdout.join(""),
     verdicts: () => stdout.map((line) => JSON.parse(line) as unknown),
     runtime: (reader: GitHubReader): CliRuntime => ({
       reader,
@@ -224,10 +231,12 @@ describe("review gate", () => {
     expect(status.stdout.join("")).toContain(
       "| [#1](https://github.com/owner/repo/pull/1) | ✅ | 👀 review required | ⛔ blocked |"
     );
-    const watch = testRuntime(reader());
-    expect(await main([...single, "--pretty"], watch.runtime)).toBe(6);
-    expect(watch.stdout.join("")).toBe(
-      "BLOCKER: review-required\npr=1\naction=human action needed: a required approving review is missing; report it and wait for a reviewer\n"
+    const watch = tickingRuntime();
+    expect(await main([...single, "--pretty"], watch.runtime(reader()))).toBe(
+      6
+    );
+    expect(watch.text()).toBe(
+      "WAITING: frontier=#1; confirming merge block (GitHub reads BLOCKED; stops if the same head still does after 60s)\nBLOCKER: review-required\npr=1\naction=human action needed: a required approving review is missing; report it and wait for a reviewer\n"
     );
   });
 
@@ -311,6 +320,11 @@ describe("review gate", () => {
         reason: { kind: "merge-queue", unmergedCount: 3 },
       },
       {
+        kind: "WAITING",
+        frontier: { number: 2 },
+        reason: { kind: "confirming-block" },
+      },
+      {
         kind: "BLOCKER",
         exitCode: 6,
         blocker: {
@@ -319,6 +333,94 @@ describe("review gate", () => {
           reason: "review-required",
         },
       },
+    ]);
+  });
+});
+
+describe("a frontier with clean CI that reads BLOCKED for a moment", () => {
+  // Reads as `fakeReader(polls[n])` during the nth 60-second poll.
+  function pollsReader(now: () => number, polls: readonly FakeReaderOptions[]) {
+    const readers = polls.map((options) => fakeReader(options));
+    const at = () => {
+      const reader = readers[Math.floor(now() / 60)];
+      if (reader === undefined) throw new Error("read past the last poll");
+      return reader;
+    };
+    return {
+      ...fakeReader(),
+      pullRequest: (pr: PrContext) => at().pullRequest(pr),
+      checksFastPath: (pr: PrContext) => at().checksFastPath(pr),
+      commitRollups: (pr: PrContext) => at().commitRollups(pr),
+    } satisfies GitHubReader;
+  }
+  const blocked = { facts: { mergeStateStatus: "BLOCKED" } } as const;
+
+  it("reaches READY when the block clears within 60 seconds", async () => {
+    const watch = tickingRuntime();
+    expect(
+      await main(single, watch.runtime(pollsReader(watch.now, [blocked, {}])))
+    ).toBe(0);
+    expect(watch.verdicts()).toMatchObject([
+      {
+        kind: "WAITING",
+        frontier: { number: 1 },
+        reason: { kind: "confirming-block" },
+      },
+      { kind: "READY", exitCode: 0 },
+    ]);
+  });
+
+  it("does not count BLOCKED reads while a check is pending", async () => {
+    const pending = {
+      ...blocked,
+      fastPath: { kind: "checks", checks: [pendingCheck()] },
+      commitRollups: [{ oid: "head", state: "PENDING" }],
+    } as const;
+    const watch = tickingRuntime();
+    expect(
+      await main(
+        single,
+        watch.runtime(pollsReader(watch.now, [pending, pending, blocked, {}]))
+      )
+    ).toBe(0);
+    expect(watch.verdicts()).toMatchObject([
+      { kind: "WAITING", reason: { kind: "pending-checks" } },
+      { kind: "WAITING", reason: { kind: "pending-checks" } },
+      { kind: "WAITING", reason: { kind: "confirming-block" } },
+      { kind: "READY", exitCode: 0 },
+    ]);
+  });
+
+  it("confirms again each time a queued frontier flips back to BLOCKED", async () => {
+    const watch = tickingRuntime();
+    expect(
+      await main(
+        [
+          "--owner",
+          "owner",
+          "--repo",
+          "repo",
+          "--queued-stack",
+          "--stack-prs",
+          "1",
+        ],
+        watch.runtime(
+          pollsReader(watch.now, [
+            blocked,
+            {},
+            blocked,
+            { facts: { state: "MERGED", mergedAt: "2026-07-26T00:03:00Z" } },
+          ])
+        )
+      )
+    ).toBe(0);
+    expect(watch.verdicts()).toMatchObject([
+      { kind: "QUEUE" },
+      { kind: "STATUS", reason: "whole-stack-sweep" },
+      { kind: "WAITING", reason: { kind: "confirming-block" } },
+      { kind: "WAITING", reason: { kind: "merge-queue" } },
+      { kind: "WAITING", reason: { kind: "confirming-block" } },
+      { kind: "COMPLETE", exitCode: 0 },
     ]);
   });
 });
@@ -353,24 +455,23 @@ describe("a just-pushed head that GitHub blocks before any check registers", () 
       0
     );
     expect(watch.verdicts()).toMatchObject([
-      {
-        kind: "RETRY",
-        failure: { kind: "checks-unavailable" },
-        retryInSeconds: 60,
-      },
+      { kind: "WAITING", reason: { kind: "confirming-block" } },
       { kind: "WAITING", reason: { kind: "pending-checks" } },
       { kind: "READY", exitCode: 0 },
     ]);
   });
 
-  it("stops at the merge gate once the block has held for 60 seconds", async () => {
+  it("stops at the merge gate once the block has held for 60 seconds, without spending the query-error budget", async () => {
     const watch = tickingRuntime();
     expect(
-      await main(single, watch.runtime(pushedReader(watch.now, Infinity)))
+      await main(
+        [...single, "--max-query-errors", "1"],
+        watch.runtime(pushedReader(watch.now, Infinity))
+      )
     ).toBe(6);
     expect(watch.now()).toBe(60);
     expect(watch.verdicts()).toMatchObject([
-      { kind: "RETRY", failure: { kind: "checks-unavailable" } },
+      { kind: "WAITING", reason: { kind: "confirming-block" } },
       {
         kind: "BLOCKER",
         exitCode: 6,
@@ -660,13 +761,11 @@ console.log(JSON.stringify(value));
   });
 
   it("does not stop at the merge gate on the first read of a blocked PR", () => {
-    expect(
-      run("blocked", ["--max-query-errors", "2", "--timeout", "0.001"])
-    ).toMatchObject({
+    expect(run("blocked", ["--timeout", "0.001"])).toMatchObject({
       status: 5,
       verdicts: [
-        { kind: "RETRY", failure: { kind: "checks-unavailable" } },
-        { kind: "TIMEOUT", reason: { kind: "status-unavailable" } },
+        { kind: "WAITING", reason: { kind: "confirming-block" } },
+        { kind: "TIMEOUT", reason: { kind: "confirming-block" } },
       ],
     });
   });

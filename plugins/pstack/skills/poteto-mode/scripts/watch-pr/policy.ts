@@ -60,30 +60,75 @@ async function mergeAssessment(
     }),
   };
 }
-// Right after a push the head rollup is null until the first check registers.
-// An earlier commit that reported checks, or mergeability GitHub is still
-// computing, means the head has not reported yet. A required check that has
-// not registered reads as BLOCKED, so a BLOCKED head counts as having no
-// checks only once the same head has read that way for this long.
+// GitHub reads BLOCKED for a moment while it computes mergeability, while a
+// queued PR changes state, and until a required check on a new head registers.
+// A BLOCKED read stops the watcher only once the same head has read BLOCKED,
+// with no check pending, across this many seconds.
 const BLOCKED_CONFIRM_SECONDS = 60;
-type BlockedConfirmer = (facts: T.PullRequestFacts) => boolean;
-function blockedConfirmer(clock: Pick<WatchClock, "now">): BlockedConfirmer {
-  const firstSeen = new Map<
+class BlockUnconfirmed extends Error {
+  readonly pr: T.PrContext;
+  constructor(pr: T.PrContext) {
+    super(`#${pr.number} reads BLOCKED; confirming the merge block`);
+    this.name = "BlockUnconfirmed";
+    this.pr = pr;
+  }
+}
+interface BlockClock {
+  observe(facts: T.PullRequestFacts, ci: T.CiState): void;
+  held(facts: T.PullRequestFacts): boolean;
+}
+function blockClock(clock: Pick<WatchClock, "now">): BlockClock {
+  const reads = new Map<
     T.PrNumber,
-    { readonly headRefOid: string | null; readonly at: number }
+    {
+      readonly headRefOid: string | null;
+      readonly since: number;
+      readonly last: number;
+    }
   >();
-  return ({ context, headRefOid }) => {
-    const prior = firstSeen.get(context.number);
-    if (prior?.headRefOid === headRefOid)
-      return clock.now() - prior.at >= BLOCKED_CONFIRM_SECONDS;
-    firstSeen.set(context.number, { headRefOid, at: clock.now() });
-    return false;
+  return {
+    observe({ context, headRefOid, mergeStateStatus }, ci) {
+      if (mergeStateStatus !== "BLOCKED" || ci.kind === "ci-pending") {
+        reads.delete(context.number);
+        return;
+      }
+      const prior = reads.get(context.number);
+      const since =
+        prior?.headRefOid === headRefOid ? prior.since : clock.now();
+      reads.set(context.number, { headRefOid, since, last: clock.now() });
+    },
+    held({ context, headRefOid }) {
+      const read = reads.get(context.number);
+      return (
+        read?.headRefOid === headRefOid &&
+        read.last - read.since >= BLOCKED_CONFIRM_SECONDS
+      );
+    },
   };
 }
+// gateReason gives these two reasons only to the frontier.
+function confirmGate(
+  blocker: T.MergeBlocker,
+  row: T.PrSnapshot | undefined,
+  blocks: BlockClock | undefined
+): void {
+  if (
+    blocker.kind === "merge-gate" &&
+    (blocker.reason === "merge-blocked" ||
+      blocker.reason === "review-required") &&
+    row?.kind === "open" &&
+    row.facts.mergeStateStatus === "BLOCKED" &&
+    blocks !== undefined &&
+    !blocks.held(row.facts)
+  )
+    throw new BlockUnconfirmed(blocker.pr);
+}
+// Right after a push the head rollup is null until the first check registers.
+// An earlier commit that reported checks, or mergeability GitHub is still
+// computing, means the head has not reported yet.
 async function noChecksCi(
   reader: T.GitHubReader,
-  facts: T.PullRequestFacts,
-  confirmBlocked: BlockedConfirmer | undefined
+  facts: T.PullRequestFacts
 ): Promise<T.CiNone> {
   const commits = await reader.commitRollups(facts.context);
   if (commits.some((commit) => commit.state !== null))
@@ -93,14 +138,6 @@ async function noChecksCi(
   if (facts.mergeable === "UNKNOWN")
     throw new ChecksUnavailable(
       `no checks reported on head ${facts.headRefOid}, and GitHub has not computed mergeability yet`
-    );
-  if (
-    facts.mergeStateStatus === "BLOCKED" &&
-    confirmBlocked !== undefined &&
-    !confirmBlocked(facts)
-  )
-    throw new ChecksUnavailable(
-      `no checks reported on head ${facts.headRefOid}, and GitHub blocks the merge; rereading after ${BLOCKED_CONFIRM_SECONDS}s in case a required check has not registered yet`
     );
   return {
     kind: "ci-none",
@@ -125,7 +162,7 @@ export async function readSnapshot(args: {
   readonly pendingHistory: "include" | "omit";
   readonly allowDraft: boolean;
   readonly settler?: ReviewSettler;
-  readonly confirmBlocked?: BlockedConfirmer;
+  readonly blockClock?: BlockClock;
 }): Promise<T.PrSnapshot> {
   const facts = await args.reader.pullRequest(args.context);
   if (facts.state === "MERGED" || facts.mergedAt !== null)
@@ -144,8 +181,7 @@ export async function readSnapshot(args: {
     )
   );
   let ci: T.CiState;
-  if (checks.source === "none")
-    ci = await noChecksCi(args.reader, facts, args.confirmBlocked);
+  if (checks.source === "none") ci = await noChecksCi(args.reader, facts);
   else if (
     failed === null &&
     pending !== null &&
@@ -193,6 +229,16 @@ export async function readSnapshot(args: {
         github: merge.github,
       };
   }
+  // A no-checks head may read BLOCKED for a required check that has not
+  // registered yet, so it waits on any row, not only at the frontier gate.
+  args.blockClock?.observe(facts, ci);
+  if (
+    ci.kind === "ci-none" &&
+    facts.mergeStateStatus === "BLOCKED" &&
+    args.blockClock !== undefined &&
+    !args.blockClock.held(facts)
+  )
+    throw new BlockUnconfirmed(args.context);
   return {
     kind: "open",
     context: args.context,
@@ -467,6 +513,29 @@ async function pollUntilTerminal<V>(args: {
       result = await args.step();
       failures = 0;
     } catch (error) {
+      if (error instanceof BlockUnconfirmed) {
+        failures = 0;
+        const reason = { kind: "confirming-block" } as const;
+        args.dependencies.emit(
+          args.stamp({
+            kind: "WAITING",
+            terminal: false,
+            frontier: error.pr,
+            reason,
+          })
+        );
+        if (
+          deadlinePassed(started, args.options, args.dependencies.clock.now())
+        )
+          return args.stamp({
+            kind: "TIMEOUT",
+            terminal: true,
+            exitCode: 5,
+            reason,
+          });
+        await args.dependencies.clock.sleep(args.options.interval);
+        continue;
+      }
       if (!(error instanceof WatcherQueryError)) throw error;
       failures += 1;
       if (!error.failure.retryable || failures >= args.options.maxQueryErrors)
@@ -514,9 +583,9 @@ export async function runSimple(args: {
 }): Promise<T.TerminalVerdict> {
   const stamp = verdictFactory(args.dependencies.clock, args.mode);
   const settler = reviewSettler(args);
-  const confirmBlocked = args.statusOnly
+  const blocks = args.statusOnly
     ? undefined
-    : blockedConfirmer(args.dependencies.clock);
+    : blockClock(args.dependencies.clock);
   const step = async (): Promise<StepResult<T.TerminalVerdict>> => {
     const rows: T.PrSnapshot[] = [];
     for (const context of args.contexts)
@@ -527,7 +596,7 @@ export async function runSimple(args: {
           pendingHistory: "include",
           allowDraft: args.options.allowDraft,
           settler,
-          confirmBlocked,
+          blockClock: blocks,
         })
       );
     const complete = nonEmpty(rows);
@@ -556,11 +625,19 @@ export async function runSimple(args: {
       args.mode === "single"
         ? classifyPr(complete[0], args.options.allowDraft)
         : selectTierMajorStackDecision(complete, args.options.allowDraft);
-    if (decision.kind === "blocker")
+    if (decision.kind === "blocker") {
+      confirmGate(
+        decision.blocker,
+        complete.find(
+          (row) => row.context.number === decision.blocker.pr.number
+        ),
+        blocks
+      );
       return {
         kind: "terminal",
         verdict: blockerVerdict(stamp, decision.blocker),
       };
+    }
     if (decision.kind === "ready" || decision.kind === "merged")
       return {
         kind: "terminal",
@@ -808,7 +885,7 @@ export async function runQueued(args: {
 }): Promise<T.QueueTerminalVerdict> {
   let state = createQueueState(args.contexts, args.dependencies.clock.now());
   const stamp = verdictFactory(args.dependencies.clock, "queued-stack");
-  const confirmBlocked = blockedConfirmer(args.dependencies.clock);
+  const blocks = blockClock(args.dependencies.clock);
   args.dependencies.emit(
     stamp({ kind: "QUEUE", terminal: false, queue: args.contexts })
   );
@@ -842,7 +919,7 @@ export async function runQueued(args: {
       context,
       pendingHistory: "omit",
       allowDraft: args.options.allowDraft,
-      confirmBlocked,
+      blockClock: blocks,
     });
     const applied = applyQueueSnapshot(
       state,
@@ -880,6 +957,11 @@ export async function runQueued(args: {
           }),
         };
       case "blocker":
+        confirmGate(
+          evaluation.blocker,
+          state.snapshots.get(evaluation.blocker.pr.number),
+          blocks
+        );
         return {
           kind: "terminal",
           verdict: blockerVerdict(stamp, evaluation.blocker),
