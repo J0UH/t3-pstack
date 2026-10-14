@@ -43,13 +43,17 @@ if (windows) {
   chmodSync(join(dir, "fake-cli"), 0o755);
 }
 
+// Windows spells it Path, and a second key in the child's environment would
+// not replace it.
+const PATH = Object.keys(process.env).find((key) => key.toUpperCase() === "PATH") ?? "PATH";
+
 function installer(bin, args) {
   const script =
     `import { hasCli, runCli } from ${JSON.stringify(common)};\n` +
     "const [bin, args] = [process.argv[1], JSON.parse(process.argv[2])];\n" +
     "console.log(JSON.stringify({ found: hasCli(bin), argv: JSON.parse(runCli(bin, args)) }));\n";
   const r = spawnSync("node", ["--input-type=module", "-e", script, bin, JSON.stringify(args)], {
-    env: { ...process.env, PATH: `${dir}${delimiter}${process.env.PATH}` },
+    env: { ...process.env, [PATH]: `${dir}${delimiter}${process.env[PATH]}` },
     encoding: "utf8",
   });
   expect(r.status, r.stderr).toBe(0);
