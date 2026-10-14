@@ -77,9 +77,10 @@ describe("shared Agent Skills tree", () => {
     const routing = readFileSync(join(repoRoot, "plugins/pstack/hooks/session-start-context.md"), "utf8");
     const skill = readFileSync(join(skillsDir, "poteto-mode", "SKILL.md"), "utf8");
     const budget = (text) => Number(text.match(/`max_output_tokens: (\d+)`/)?.[1]);
-    expect(budget(skill)).toBe(10000);
-    expect(budget(routing)).toBe(10000);
-    expect(Buffer.byteLength(skill)).toBeLessThanOrEqual(10000 * 4 * 0.9);
+    const asked = budget(skill);
+    expect(budget(routing)).toBe(asked);
+    expect(asked).toBeLessThanOrEqual(10000);
+    expect(Buffer.byteLength(skill)).toBeLessThanOrEqual(asked * 4 * 0.9);
   });
 
   test("a bare missing markdown target fails the boundary check", () => {

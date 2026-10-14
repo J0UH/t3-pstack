@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 const audit = fileURLToPath(
   new URL("../plugins/pstack/skills/poteto-mode/scripts/worktree-audit.sh", import.meta.url),
 );
-const TOOLS = ["git", "jq", "du", "awk", "sort", "date", "mktemp", "grep", "head", "rm"];
+const TOOLS = ["git", "jq", "du", "awk", "sort", "date", "mktemp", "grep", "head", "rm", "xargs", "stat"];
 
 const roots = [];
 afterEach(() => {
@@ -83,11 +83,11 @@ printf '%s' '[{"number":7,"state":"MERGED","headRefName":"shipped"},{"number":8,
       .split("\n")
       .slice(2)
       .map((line) => line.split("\t"))
-      .map((cells) => [cells[8].split("/").at(-1), { pr: cells[5], bucket: cells[7] }]),
+      .map((cells) => [cells[8].split("/").at(-1), { pr: cells[5], lastChat: cells[6], bucket: cells[7] }]),
   );
   expect(rows).toEqual({
-    shipped: { pr: "#7/merged", bucket: "safe" },
-    "in-review": { pr: "#8/open", bucket: "hold-open-pr" },
-    "no-pr": { pr: "-", bucket: "review" },
+    shipped: { pr: "#7/merged", lastChat: "-", bucket: "safe" },
+    "in-review": { pr: "#8/open", lastChat: "-", bucket: "hold-open-pr" },
+    "no-pr": { pr: "-", lastChat: "-", bucket: "review" },
   });
 });
