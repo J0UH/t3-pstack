@@ -151,6 +151,12 @@
       "rationale": "Per-skill notes: ketchup"
     },
     {
+      "pattern": "Bundled skills live at `../<name>/SKILL.md` from this file, so put this file's absolute path in every `poteto-agent` prompt.",
+      "files": "^skills/poteto-mode/SKILL\\.md$",
+      "replacement": "Bundled skills live at `../<name>/SKILL.md` from this file, so put this file's absolute path in every `poteto-agent` prompt.\n\nOn Codex, read this file whole before acting, in a shell call of its own with `max_output_tokens: 10000`. A smaller output budget cuts lines out of its middle. If a read of it shows `tokens truncated`, read it again that way.",
+      "rationale": "Codex's model picks a shell read's output budget, often 3000 to 6000 tokens for a SKILL.md, and Codex 0.162.1 then cuts the middle of anything longer, which here is the Subagents section that holds the T3 dispatch rules. The head of a cut read survives, so the instruction sits there. tests/agent-skills.test.mjs keeps the file inside the 10000-token budget it names."
+    },
+    {
       "pattern": "- About to `AskQuestion` on a",
       "replacement": "- About to ask the user a question on a",
       "rationale": "the rule is about asking, not the tool",

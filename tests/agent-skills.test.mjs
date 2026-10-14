@@ -69,6 +69,19 @@ describe("shared Agent Skills tree", () => {
     }
   });
 
+  // Codex 0.162.1 cuts the middle of a shell read whose output passes the
+  // read's budget at 4 bytes a token, and caps a budget at the model's
+  // 10000-token tool output limit. A tenth stays spare for what the call
+  // prints around the file.
+  test("poteto-mode fits the one Codex read that it and the routing text ask for", () => {
+    const routing = readFileSync(join(repoRoot, "plugins/pstack/hooks/session-start-context.md"), "utf8");
+    const skill = readFileSync(join(skillsDir, "poteto-mode", "SKILL.md"), "utf8");
+    const budget = (text) => Number(text.match(/`max_output_tokens: (\d+)`/)?.[1]);
+    expect(budget(skill)).toBe(10000);
+    expect(budget(routing)).toBe(10000);
+    expect(Buffer.byteLength(skill)).toBeLessThanOrEqual(10000 * 4 * 0.9);
+  });
+
   test("a bare missing markdown target fails the boundary check", () => {
     const root = mkdtempSync(join(tmpdir(), "pstack-skills-links-"));
     const skill = join(root, "example");
