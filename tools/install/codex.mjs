@@ -3,12 +3,27 @@
 // config.toml matches the hook's entry. Its TUI asks for that trust, but
 // `codex app-server`, which T3 runs, never does. So the installer trusts the
 // hook the way the TUI does, through the app-server, with the hash Codex
-// reports, on every install and update.
+// reports, on every install and update, once its hooks file is the one
+// tools/frozen-hooks.json pins.
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { check, INSTALL_HINT, MARKETPLACE, neutralCwd, PLUGIN_ID, runCli } from "./common.mjs";
+import { hookDigest } from "../plugin.mjs";
+import {
+  check,
+  codexSource,
+  INSTALL_HINT,
+  isPlainCopy,
+  launch,
+  MARKETPLACE,
+  marketplaceCheck,
+  neutralCwd,
+  PLUGIN_ID,
+  pluginIntact,
+  runCli,
+  updated,
+} from "./common.mjs";
 
 const REQUEST_TIMEOUT = 60_000;
 
@@ -22,7 +37,9 @@ export class AppServer {
   }
 
   constructor(home) {
-    this.proc = spawn(home.bin, ["app-server"], {
+    const run = launch(home.bin, ["app-server"]);
+    this.proc = spawn(run.file, run.args, {
+      ...run.options,
       cwd: neutralCwd(),
       env: { ...process.env, CODEX_HOME: home.dir },
       stdio: ["pipe", "pipe", "ignore"],
@@ -47,7 +64,15 @@ export class AppServer {
       while ((newline = buffer.indexOf("\n")) >= 0) {
         const line = buffer.slice(0, newline).trim();
         buffer = buffer.slice(newline + 1);
-        const message = line ? JSON.parse(line) : {};
+        let message;
+        try {
+          message = line ? JSON.parse(line) : {};
+        } catch {
+          // Not quoted: the line could hold anything the server printed.
+          failAll(new Error("codex app-server printed a line that is not JSON-RPC"));
+          this.close();
+          return;
+        }
         if (message.method) this.notifications.push(message);
         const waiter = this.pending.get(message.id);
         if (!waiter || message.method) continue;
@@ -71,7 +96,10 @@ export class AppServer {
     });
   }
 
+  // On Windows the process may be cmd.exe running npm's shim, and killing it
+  // leaves the server it started; closing stdin ends that server too.
   close() {
+    this.proc.stdin.end();
     this.proc.kill();
   }
 }
@@ -87,15 +115,25 @@ async function withServer(home, use) {
 
 // Codex keeps one cache directory per installed version and removes the old
 // one when it installs another.
+const cacheDir = (dir) => join(dir, "plugins/cache", MARKETPLACE, PLUGIN_ID.split("@")[0]);
 function installedVersions(dir) {
-  const cache = join(dir, "plugins/cache", MARKETPLACE, PLUGIN_ID.split("@")[0]);
+  const cache = cacheDir(dir);
   return existsSync(cache) ? readdirSync(cache).filter((name) => !name.startsWith(".")) : [];
 }
 
-async function pluginState(server, dir) {
+async function pluginState(server, dir, skills) {
+  const { config } = await server.request("config/read", {});
+  const marketplace = config.marketplaces?.[MARKETPLACE];
   const { marketplaces = [] } = await server.request("plugin/list", {});
   const plugin = marketplaces.flatMap((m) => m.plugins ?? []).find((p) => p.id === PLUGIN_ID);
-  return { installed: plugin?.installed === true, enabled: plugin?.enabled === true, versions: installedVersions(dir) };
+  const versions = installedVersions(dir);
+  return {
+    sources: marketplace ? [codexSource(marketplace)] : [],
+    installed: plugin?.installed === true,
+    enabled: plugin?.enabled === true,
+    versions,
+    intact: versions.length === 1 && pluginIntact(join(cacheDir(dir), versions[0]), ".codex-plugin/plugin.json", skills),
+  };
 }
 
 async function pluginHooks(server) {
@@ -103,31 +141,62 @@ async function pluginHooks(server) {
   return data.flatMap((entry) => entry.hooks).filter((hook) => hook.pluginId === PLUGIN_ID);
 }
 
-const current = (state, version) => state.installed && state.enabled && state.versions.join() === version;
+// The hook's entry comes from the hooks file the Codex manifest names, with
+// the digest that file is pinned at.
+const isPinned = (hook, pin) =>
+  hook.sourcePath.replaceAll("\\", "/").endsWith(`/${pin.path}`) &&
+  existsSync(hook.sourcePath) &&
+  hookDigest(readFileSync(hook.sourcePath, "utf8")) === pin.sha256;
 
-export async function installCodex(home, { source, version, localSource }) {
+// Why `codex plugin add` runs: a first install, an update, a cache with
+// missing files, or a disabled plugin, since Codex has no enable command.
+// Null when the home is already at `version`.
+function codexStep(state, version) {
+  if (!state.installed) return "install";
+  if (state.versions.length && state.versions.join() !== version) return "update";
+  if (!state.intact) return "repair";
+  if (!state.enabled) return "enable";
+  return null;
+}
+
+export async function installCodex(home, { source, trusted, version, skills, codexHook }) {
   const steps = [];
   const plugin = (...args) => runCli(home.bin, ["plugin", ...args], { CODEX_HOME: home.dir });
+  const state = () => withServer(home, (server) => pluginState(server, home.dir, skills));
   mkdirSync(home.dir, { recursive: true });
-  if (!/^t3-pstack\s/m.test(plugin("marketplace", "list"))) {
-    plugin("marketplace", "add", source);
-    steps.push(`added the ${MARKETPLACE} marketplace from ${source}`);
+  let before = await state();
+  if (!before.sources.length) {
+    plugin("marketplace", "add", source.arg);
+    steps.push(`added the ${MARKETPLACE} marketplace from ${source.arg}`);
+    before = await state();
   }
-  const before = await withServer(home, (server) => pluginState(server, home.dir));
-  if (!current(before, version)) {
+  // Nothing installs from a marketplace of another source; doctor names it.
+  if (!marketplaceCheck(before.sources, trusted).ok) return steps;
+  const step = codexStep(before, version);
+  if (step) {
     // A local marketplace is read in place; a Git one is a snapshot to refresh.
-    if (!localSource) plugin("marketplace", "upgrade", MARKETPLACE);
+    if (step !== "enable" && !source.local) plugin("marketplace", "upgrade", MARKETPLACE);
     plugin("add", PLUGIN_ID);
     const after = installedVersions(home.dir).join(", ");
-    steps.push(before.versions.length ? `updated ${before.versions.join(", ")} to ${after}` : `installed ${after}`);
+    steps.push(
+      {
+        install: `installed ${after}`,
+        update: updated(before.versions.join(", "), after, version),
+        repair: `reinstalled ${after}, whose files were missing`,
+        enable: "enabled it",
+      }[step],
+    );
   }
-  steps.push(...(await withServer(home, trustHooks)));
+  steps.push(...(await withServer(home, (server) => trustHooks(server, codexHook))));
   return steps;
 }
 
-// `upsert`: `replace` would drop the user's other trusted hooks.
-async function trustHooks(server) {
-  const pending = (await pluginHooks(server)).filter((h) => h.trustStatus === "untrusted" || h.trustStatus === "modified");
+// `upsert`: `replace` would drop the user's other trusted hooks. An entry
+// from any other hooks file stays untrusted, and doctor names it.
+async function trustHooks(server, pin) {
+  const pending = (await pluginHooks(server)).filter(
+    (h) => (h.trustStatus === "untrusted" || h.trustStatus === "modified") && isPinned(h, pin),
+  );
   if (!pending.length) return [];
   await server.request("config/value/write", {
     keyPath: "hooks.state",
@@ -140,27 +209,35 @@ async function trustHooks(server) {
   return pending.map((h) => `trusted hook ${h.key} (was ${h.trustStatus})`);
 }
 
-export async function doctorCodex(home, { version, skills }) {
+export async function doctorCodex(home, { version, skills, trusted, codexHook }) {
   return withServer(home, async (server) => {
-    const state = await pluginState(server, home.dir);
+    const state = await pluginState(server, home.dir, skills);
     const hooks = await pluginHooks(server);
     const listed = (await server.request("skills/list", { cwds: [neutralCwd()] })).data.flatMap((entry) => entry.skills);
-    const ours = new Set(skills);
-    const plain = listed.filter((skill) => ours.has(skill.name)).map((skill) => skill.path);
+    const plain = listed.filter((skill) => isPlainCopy(skill.name, skill.path, skills)).map((skill) => skill.path);
     const installed = state.versions.join(", ");
-    const untrusted = hooks.filter((h) => h.trustStatus !== "trusted");
+    const good = (h) => h.trustStatus === "trusted" && isPinned(h, codexHook);
     return [
+      marketplaceCheck(state.sources, trusted, `remove it with \`CODEX_HOME=${home.dir} codex plugin marketplace remove ${MARKETPLACE}\``),
       check(
         "installed",
-        state.installed && installed === version,
-        state.installed ? `${installed}${installed === version ? "" : `, expected ${version}`}` : "not installed",
+        state.installed && installed === version && state.intact,
+        !state.installed
+          ? "not installed"
+          : state.versions.length && installed !== version
+            ? `${installed}, expected ${version}`
+            : state.intact
+              ? installed
+              : `its files in ${join(cacheDir(home.dir), installed)} are missing`,
         INSTALL_HINT,
       ),
       check("enabled", state.enabled, state.enabled ? "yes" : "no", INSTALL_HINT),
       check(
         "session-start hook trusted",
-        hooks.length > 0 && untrusted.length === 0,
-        hooks.length ? hooks.map((h) => `${h.key} ${h.trustStatus}`).join("; ") : "no t3-pstack hook listed",
+        hooks.length > 0 && hooks.every(good),
+        hooks.length
+          ? hooks.map((h) => `${h.key} ${h.trustStatus}${isPinned(h, codexHook) ? "" : `, not from the ${codexHook.path} this release pins`}`).join("; ")
+          : "no t3-pstack hook listed",
         INSTALL_HINT,
       ),
       check(

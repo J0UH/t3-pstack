@@ -3,15 +3,17 @@
 // instance in T3's settings, enabled or not, and the homes named by flag.
 // An instance's home resolves as T3 resolves it (apps/server
 // Drivers/ClaudeHome.ts and Drivers/CodexHomeLayout.ts): `config.homePath`,
-// else the instance's CLAUDE_CONFIG_DIR or CODEX_HOME, else the default.
+// else the instance's CLAUDE_CONFIG_DIR or CODEX_HOME, else the default. T3
+// expands a leading `~` in the first two and in `config.binaryPath`
+// (provider-core pathExpansion.ts).
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
+
+import { expandHome as expand } from "./common.mjs";
 
 const DRIVERS = { claudeAgent: "claude", codex: "codex" };
 const ENV_VAR = { claude: "CLAUDE_CONFIG_DIR", codex: "CODEX_HOME" };
 const DEFAULT_HOME = { claude: ".claude", codex: ".codex" };
-
-const expand = (path, home) => (path === "~" ? home : path.startsWith("~/") ? join(home, path.slice(2)) : path);
 
 // T3 keeps its state in `${T3CODE_HOME:-~/.t3}/userdata` (apps/server os-jank.ts and config.ts).
 export function t3SettingsPath(env, home) {
@@ -23,7 +25,8 @@ function readT3Settings(path) {
   try {
     return { instances: JSON.parse(readFileSync(path, "utf8")).providerInstances ?? {} };
   } catch (err) {
-    return { instances: {}, error: err.code === "ENOENT" ? "not found" : err.message };
+    // JSON.parse's message quotes the text around the fault, which can hold a token.
+    return { instances: {}, error: err.code === "ENOENT" ? "not found" : err instanceof SyntaxError ? "invalid JSON" : err.message };
   }
 }
 
@@ -52,14 +55,15 @@ export function discoverHomes({ env, home, claudeHomes = [], codexHomes = [] }) 
     const config = instance.config ?? {};
     const instanceEnv = Object.fromEntries((instance.environment ?? []).map((v) => [v.name, v.value ?? ""]));
     if (config.shadowHomePath?.trim()) shadows.add(resolve(expand(config.shadowHomePath.trim(), home)));
-    // T3 does not expand `~` in an inherited variable.
+    const fromEnv = instanceEnv[ENV_VAR[harness]]?.trim();
     const dir = config.homePath?.trim()
       ? resolve(expand(config.homePath.trim(), home))
-      : instanceEnv[ENV_VAR[harness]]?.trim()
-        ? resolve(instanceEnv[ENV_VAR[harness]].trim())
+      : fromEnv
+        ? resolve(expand(fromEnv, home))
         : join(home, DEFAULT_HOME[harness]);
     const disabled = instance.enabled === false || config.enabled === false;
-    add(harness, dir, `T3 instance ${id}${disabled ? " (disabled)" : ""}`, config.binaryPath?.trim());
+    const bin = config.binaryPath?.trim();
+    add(harness, dir, `T3 instance ${id}${disabled ? " (disabled)" : ""}`, bin && expand(bin, home));
   }
 
   for (const harness of ["claude", "codex"]) {

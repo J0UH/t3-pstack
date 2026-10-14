@@ -3,11 +3,11 @@
 // `${XDG_CONFIG_HOME:-~/.config}/t3-pstack/models.md`. Released versions read
 // `t3-pstack-models.md` in each config home, so the installer moves that sheet
 // to the machine path once and leaves a symlink at each home's old path.
-import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, symlinkSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { checkSheet, parseSheet } from "../../plugins/pstack/skills/setup-pstack/scripts/t3-sheet.mjs";
-import { check, INSTALL_HINT, writeAtomic } from "./common.mjs";
+import { check, INSTALL_HINT, tempBeside, writeAtomic } from "./common.mjs";
 
 export const HOME_SHEET = "t3-pstack-models.md";
 const SETUP_HINT = "run /t3-pstack:setup-pstack in a T3 thread";
@@ -21,10 +21,18 @@ const resolvesTo = (path, target) => isFile(path) && isFile(target) && realpathS
 const homeSheets = (homes) => homes.map((home) => join(home.dir, HOME_SHEET));
 
 function link(target, path) {
-  const tmp = `${path}.t3-pstack-link`;
-  rmSync(tmp, { force: true });
+  const tmp = tempBeside(path);
   symlinkSync(target, tmp);
   renameSync(tmp, path);
+}
+
+// A sheet a home links to from outside every home, such as one kept in a
+// dotfiles repository, is the user's file to keep.
+function outsideHomes(path, homes) {
+  return homes.every(({ dir }) => {
+    const rel = relative(existsSync(dir) ? realpathSync(dir) : resolve(dir), path);
+    return rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
+  });
 }
 
 export function moveSheet(sheet, homes) {
@@ -34,14 +42,21 @@ export function moveSheet(sheet, homes) {
     if (!found.length) return steps;
     if (new Set(found.map((path) => readFileSync(path, "utf8"))).size > 1) return steps;
     mkdirSync(dirname(sheet), { recursive: true });
-    writeAtomic(sheet, readFileSync(found[0]));
-    steps.push(`moved the sheet from ${found[0]}`);
+    const kept = found.find((path) => outsideHomes(path, homes));
+    if (kept) {
+      link(kept, sheet);
+      steps.push(`linked the sheet to ${kept}`);
+    } else {
+      writeAtomic(sheet, readFileSync(found[0]), found[0]);
+      steps.push(`moved the sheet from ${found[0]}`);
+    }
   }
-  // A home sheet that differs from the machine sheet stays, and doctor names it.
+  // A home sheet that differs from the machine sheet stays, and doctor names
+  // it. A link to another file stays too, so that file is never orphaned.
   for (const path of homeSheets(homes)) {
     if (!existsSync(dirname(path)) || resolvesTo(path, sheet)) continue;
     const present = lstatSync(path, { throwIfNoEntry: false });
-    if (present && isFile(path) && !sameBytes(path, sheet)) continue;
+    if (present && isFile(path) && (present.isSymbolicLink() || !sameBytes(path, sheet))) continue;
     link(sheet, path);
     steps.push(`linked ${path} to it`);
   }

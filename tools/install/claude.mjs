@@ -1,20 +1,36 @@
 // Claude Code: the marketplace plugin at user scope, in one config home.
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { constants, copyFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { check, INSTALL_HINT, MARKETPLACE, PLUGIN_ID, runCli, writeAtomic } from "./common.mjs";
+import {
+  check,
+  claudeSource,
+  INSTALL_HINT,
+  isPlainCopy,
+  MARKETPLACE,
+  marketplaceCheck,
+  PLUGIN_ID,
+  pluginIntact,
+  readJson,
+  runCli,
+  updated,
+  writeAtomic,
+} from "./common.mjs";
 
-const readJson = (path, fallback) => (existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : fallback);
+const readOr = (path, fallback) => (existsSync(path) ? readJson(path) : fallback);
 const RECORDS = "plugins/installed_plugins.json";
 
 function read(dir) {
-  const settings = readJson(join(dir, "settings.json"), {});
-  const known = readJson(join(dir, "plugins/known_marketplaces.json"), {});
-  const records = readJson(join(dir, RECORDS), {}).plugins?.[PLUGIN_ID] ?? [];
+  const settings = readOr(join(dir, "settings.json"), {});
+  const known = readOr(join(dir, "plugins/known_marketplaces.json"), {});
+  const records = readOr(join(dir, RECORDS), {}).plugins?.[PLUGIN_ID] ?? [];
   const user = records.find((r) => r.scope === "user");
+  const declared = settings.extraKnownMarketplaces?.[MARKETPLACE];
   return {
     settings,
-    marketplace: settings.extraKnownMarketplaces?.[MARKETPLACE] ?? known[MARKETPLACE],
+    marketplace: declared ?? known[MARKETPLACE],
+    // The source settings.json declares and the one Claude Code last fetched.
+    sources: [declared, known[MARKETPLACE]].filter((m) => m?.source).map((m) => claudeSource(m.source)),
     user,
     stale: user ? records.filter((r) => isStale(r, user)) : [],
     enabled: settings.enabledPlugins?.[PLUGIN_ID] === true,
@@ -24,20 +40,24 @@ function read(dir) {
 const isStale = (record, user) =>
   record.scope !== "user" && (record.version !== user.version || record.installPath !== user.installPath);
 
+const intact = (state, skills) => state.user !== undefined && pluginIntact(state.user.installPath, ".claude-plugin/plugin.json", skills);
+
 // Third-party marketplaces default to no auto-update; the /plugin toggle
 // writes this key, and Claude Code copies it into known_marketplaces.json at
 // its next start. A directory source loads in place and has nothing to fetch.
 const autoUpdates = (marketplace) => marketplace?.autoUpdate === true || marketplace?.source?.source === "directory";
 
-export function installClaude(home, { source, version }) {
+export function installClaude(home, { source, trusted, version, skills }) {
   const steps = [];
   const plugin = (...args) => runCli(home.bin, ["plugin", ...args], { CLAUDE_CONFIG_DIR: home.dir });
   mkdirSync(home.dir, { recursive: true });
-  let state = read(home.dir);
-  if (!state.marketplace) {
-    plugin("marketplace", "add", source);
-    steps.push(`added the ${MARKETPLACE} marketplace from ${source}`);
+  if (!read(home.dir).sources.length) {
+    plugin("marketplace", "add", source.arg);
+    steps.push(`added the ${MARKETPLACE} marketplace from ${source.arg}`);
   }
+  // Nothing installs from a marketplace of another source; doctor names it.
+  let state = read(home.dir);
+  if (!marketplaceCheck(state.sources, trusted).ok) return steps;
   if (!state.user) {
     plugin("install", PLUGIN_ID, "--scope", "user");
     steps.push(`installed ${read(home.dir).user?.version}`);
@@ -45,7 +65,10 @@ export function installClaude(home, { source, version }) {
     // `plugin update` reads the marketplace as last fetched.
     plugin("marketplace", "update", MARKETPLACE);
     plugin("update", PLUGIN_ID, "--scope", "user");
-    steps.push(`updated ${state.user.version} to ${read(home.dir).user?.version}`);
+    steps.push(updated(state.user.version, read(home.dir).user?.version, version));
+  } else if (!intact(state, skills)) {
+    plugin("install", PLUGIN_ID, "--scope", "user");
+    steps.push(`reinstalled ${read(home.dir).user?.version}, whose files were missing`);
   }
   if (!read(home.dir).enabled) {
     plugin("enable", PLUGIN_ID, "--scope", "user");
@@ -75,10 +98,9 @@ export function syncScopedRecords(dir) {
   const path = join(dir, RECORDS);
   const { user, stale } = read(dir);
   if (!stale.length) return [];
-  const text = readFileSync(path, "utf8");
   const backup = `${path}.${new Date().toISOString().replace(/[:.]/g, "-")}.bak`;
-  writeFileSync(backup, text);
-  const data = JSON.parse(text);
+  copyFileSync(path, backup, constants.COPYFILE_EXCL);
+  const data = readJson(path);
   const steps = [];
   for (const record of data.plugins[PLUGIN_ID].filter((r) => isStale(r, user))) {
     steps.push(`moved the ${record.scope}-scope record for ${record.projectPath} from ${record.version} to ${user.version}`);
@@ -93,16 +115,26 @@ export function syncScopedRecords(dir) {
   return [...steps, `backed up ${RECORDS} to ${backup}`];
 }
 
-export function doctorClaude(home, { version, skills }) {
+export function doctorClaude(home, { version, skills, trusted }) {
   const state = read(home.dir);
   const installed = state.user?.version;
+  const whole = intact(state, skills);
   const skillsDir = join(home.dir, "skills");
-  const plain = existsSync(skillsDir) ? readdirSync(skillsDir).filter((name) => skills.includes(name)) : [];
+  const plain = existsSync(skillsDir)
+    ? readdirSync(skillsDir).filter((name) => isPlainCopy(name, join(skillsDir, name, "SKILL.md"), skills))
+    : [];
   return [
+    marketplaceCheck(state.sources, trusted, `remove it with \`CLAUDE_CONFIG_DIR=${home.dir} claude plugin marketplace remove ${MARKETPLACE}\``),
     check(
       "installed",
-      installed === version,
-      installed ? `${installed}${installed === version ? "" : `, expected ${version}`}` : "not installed",
+      installed === version && whole,
+      !installed
+        ? "not installed"
+        : installed !== version
+          ? `${installed}, expected ${version}`
+          : whole
+            ? installed
+            : `${installed}, but its files at ${state.user.installPath} are missing`,
       INSTALL_HINT,
     ),
     check("enabled", state.enabled, state.enabled ? "yes" : "no", INSTALL_HINT),

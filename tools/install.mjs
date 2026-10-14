@@ -7,23 +7,29 @@
 // the Codex app-server it starts refreshes a Git marketplace, as any T3 Codex
 // thread does. Both exit 1 when a check fails.
 //
+// Each home's t3-pstack marketplace must come from chhoumann/t3-pstack or from
+// this run's --source. A home whose marketplace has another source, such as a
+// local --source from an earlier run, gets nothing installed and no hook
+// trusted, and doctor fails it with that source.
+//
 //   npx -y github:chhoumann/t3-pstack <install|update|doctor>
-//     --source <path|owner/repo|git URL>   marketplace source, default chhoumann/t3-pstack
+//     --source <owner/repo|git URL|dir>   marketplace source, default chhoumann/t3-pstack
 //     --claude-home <dir>, --codex-home <dir>   more homes, repeatable
 //     --catalog <file>   an orchestrator_capabilities dump to check the sheet's targets against
 //     --json
 // Node 20 or later, no dependencies.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 import { doctorClaude, installClaude } from "./install/claude.mjs";
 import { doctorCodex, installCodex } from "./install/codex.mjs";
-import { check, hasCli, INSTALL_HINT } from "./install/common.mjs";
+import { check, hasCli, HOME_REPO, INSTALL_HINT, parseSource, readJson } from "./install/common.mjs";
 import { discoverHomes } from "./install/homes.mjs";
 import { doctorSheet, moveSheet, sheetPath } from "./install/sheet.mjs";
+import { FROZEN_HOOKS } from "./plugin.mjs";
 
 const HARNESSES = {
   claude: { name: "Claude Code", install: installClaude, doctor: doctorClaude },
@@ -31,17 +37,22 @@ const HARNESSES = {
 };
 
 const USAGE =
-  "usage: t3-pstack <install|update|doctor> [--source <path|owner/repo|git URL>] " +
+  "usage: t3-pstack <install|update|doctor> [--source <owner/repo|git URL|dir>] " +
   "[--claude-home <dir>]... [--codex-home <dir>]... [--catalog <file>] [--json]";
 
-// The version and roles to converge on come from the plugin this run installs:
-// the local source, or else this package, which is the marketplace's own repo.
+// What to converge on comes from the plugin this run installs: the local
+// source, or else this package, which is the marketplace's own repo. `skills`
+// maps each skill to its SKILL.md, and `codexHook` is the hooks file the
+// Codex manifest names, with its pinned digest.
 function pluginFacts(root) {
   const plugin = join(root, "plugins/pstack");
-  const { roles, tiers } = JSON.parse(readFileSync(join(plugin, "models.json"), "utf8"));
+  const { roles, tiers } = readJson(join(plugin, "models.json"));
+  const hooks = readJson(join(plugin, ".codex-plugin/plugin.json")).hooks.replace(/^\.\//, "");
+  const skills = readdirSync(join(plugin, "skills"), { withFileTypes: true }).filter((entry) => entry.isDirectory());
   return {
-    version: JSON.parse(readFileSync(join(plugin, ".claude-plugin/plugin.json"), "utf8")).version,
-    skills: readdirSync(join(plugin, "skills")),
+    version: readJson(join(plugin, ".claude-plugin/plugin.json")).version,
+    skills: new Map(skills.map(({ name }) => [name, readFileSync(join(plugin, "skills", name, "SKILL.md"), "utf8")])),
+    codexHook: { path: hooks, sha256: readJson(join(root, FROZEN_HOOKS))[`plugins/pstack/${hooks}`].sha256 },
     roles,
     tiers,
   };
@@ -62,19 +73,19 @@ async function run(argv, env, home) {
   const [command] = positionals;
   if (positionals.length !== 1 || !["install", "update", "doctor"].includes(command)) return { usage: true };
 
-  const localSource = values.source && existsSync(values.source) ? resolve(values.source) : undefined;
-  const source = localSource ?? values.source ?? "chhoumann/t3-pstack";
-  const facts = pluginFacts(localSource ?? fileURLToPath(new URL("..", import.meta.url)));
-  const context = { source, localSource, version: facts.version, skills: facts.skills };
+  const source = parseSource(values.source ?? HOME_REPO, home);
+  const facts = pluginFacts(source.local ?? fileURLToPath(new URL("..", import.meta.url)));
+  const trusted = new Set([parseSource(HOME_REPO, home).key, source.key]);
+  const context = { source, trusted, version: facts.version, skills: facts.skills, codexHook: facts.codexHook };
   const { homes, settings } = discoverHomes({
     env,
     home,
     claudeHomes: values["claude-home"],
     codexHomes: values["codex-home"],
   });
-  const catalog = values.catalog ? JSON.parse(readFileSync(values.catalog, "utf8")) : null;
+  const catalog = values.catalog ? readJson(values.catalog) : null;
 
-  const report = { command, version: facts.version, source, settings, homes: [] };
+  const report = { command, version: facts.version, source: source.arg, settings, homes: [] };
   for (const target of homes) {
     const harness = HARNESSES[target.harness];
     const row = { harness: target.harness, dir: target.dir, from: target.from, steps: [], checks: [] };
