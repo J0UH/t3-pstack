@@ -386,7 +386,8 @@ export function validateHooks(hooksJson, { statOf, file = "hooks/hooks.json", ro
 // release's CHANGES entry must tell users to rerun the installer. `shipped`
 // holds VERSION and the hooks files as origin/main has them, since main is
 // what the marketplaces deliver: a file that differs from main's changes in
-// this release, so its pin must name this release, and VERSION must be new.
+// this release, so its pin must name this release, and VERSION must be newer
+// than main's.
 export function frozenHookFaults({ pins, files, version, changelog, shipped }) {
   const faults = Object.keys(files)
     .filter((path) => !Object.hasOwn(pins, path))
@@ -405,8 +406,8 @@ export function frozenHookFaults({ pins, files, version, changelog, shipped }) {
           `Pin "sha256": "${digest}" and "changedIn": "${version}" in ${FROZEN_HOOKS}, ` +
           `and tell users to rerun the installer in CHANGES.md's ${version} entry.`,
       );
-    } else if (changed && version === shipped.version) {
-      faults.push(`${path} differs from origin/main, which already ships ${version}, so this change needs a new VERSION`);
+    } else if (changed && Bun.semver.order(version, shipped.version) <= 0) {
+      faults.push(`${path} differs from origin/main, which ships ${shipped.version}, so this change needs a VERSION newer than that, not ${version}`);
     } else if (changed && pin.changedIn !== version) {
       faults.push(`${path} differs from origin/main, so its pin's "changedIn" must be ${version}, not ${pin.changedIn}`);
     } else if (pin.changedIn === version && !/rerun the installer/i.test(entry)) {
@@ -416,18 +417,19 @@ export function frozenHookFaults({ pins, files, version, changelog, shipped }) {
   return faults;
 }
 
-// VERSION and `paths` at the merge-base of HEAD and origin/main, with
-// undefined for a path main lacks. CI checks out full history for this.
+// VERSION and `paths` as origin/main has them now, with undefined for a path
+// main lacks. It fetches main first, so a branch cut before main's latest
+// release is compared with that release and not with the merge-base.
 function shippedOnMain(root, paths) {
   const git = (...args) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-  let base;
+  const main = "refs/remotes/origin/main";
   try {
-    base = git("merge-base", "HEAD", "origin/main").trim();
+    git("fetch", "--quiet", "--no-tags", "origin", `+refs/heads/main:${main}`);
   } catch (err) {
-    throw new Error(`${FROZEN_HOOKS}: cannot find origin/main to compare the hooks files with: ${(err.stderr || err.message).trim()}`);
+    throw new Error(`${FROZEN_HOOKS}: cannot fetch origin/main to compare the hooks files with: ${(err.stderr || err.message).trim()}`);
   }
-  const listed = new Set(git("ls-tree", "-r", "--name-only", base, "--", "VERSION", ...paths).split("\n"));
-  const show = (path) => (listed.has(path) ? git("show", `${base}:${path}`) : undefined);
+  const listed = new Set(git("ls-tree", "-r", "--name-only", main, "--", "VERSION", ...paths).split("\n"));
+  const show = (path) => (listed.has(path) ? git("show", `${main}:${path}`) : undefined);
   return { version: show("VERSION")?.trim(), files: Object.fromEntries(paths.map((path) => [path, show(path)])) };
 }
 

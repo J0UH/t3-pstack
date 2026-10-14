@@ -327,7 +327,10 @@ describe("plan, changes, apply", () => {
     git(dir, "init", "-q");
     git(dir, "add", "-A");
     git(dir, "commit", "-qm", "main");
-    git(dir, "update-ref", "refs/remotes/origin/main", "HEAD");
+    const origin = scratch("pstack-origin-");
+    git(origin, "init", "-q", "--bare");
+    git(dir, "remote", "add", "origin", origin);
+    git(dir, "push", "-q", "origin", "HEAD:refs/heads/main");
     return dir;
   };
   const snapshot = (dir) => Object.fromEntries(walk(dir).map((path) => [path, readFileSync(path, "utf8")]));
@@ -572,10 +575,50 @@ describe("plan, changes, apply", () => {
     writeFileSync(join(root, "tools/frozen-hooks.json"), JSON.stringify(pins, null, 2) + "\n");
     const version = readFileSync(join(root, "VERSION"), "utf8").trim();
     expect(problems(root)).toEqual([
-      `${hooks} differs from origin/main, which already ships ${version}, so this change needs a new VERSION`,
+      `${hooks} differs from origin/main, which ships ${version}, so this change needs a VERSION newer than that, not ${version}`,
     ]);
     rmSync(join(root, ".git"), { recursive: true });
-    expect(problems(root)).toEqual([expect.stringMatching(/^tools\/frozen-hooks.json: cannot find origin\/main to compare the hooks files with: fatal: not a git repository/)]);
+    expect(problems(root)).toEqual([expect.stringMatching(/^tools\/frozen-hooks.json: cannot fetch origin\/main to compare the hooks files with: fatal: not a git repository/)]);
+  });
+
+  test("problems fetches origin/main and compares with it, not with the merge-base, so a release main already shipped cannot be reused", () => {
+    const root = repoCopy();
+    const hooks = "plugins/pstack/hooks/codex-hooks.json";
+    const original = readFileSync(join(root, hooks), "utf8");
+    // A release with `matcher` for the hooks file: VERSION, the hooks file, its pin, and a CHANGES entry.
+    const release = (version, matcher) => {
+      const text = original.replace("startup|resume|clear|compact", matcher);
+      writeFileSync(join(root, hooks), text);
+      const pins = JSON.parse(readFileSync(join(root, "tools/frozen-hooks.json"), "utf8"));
+      pins[hooks] = { sha256: hookDigest(text), changedIn: version };
+      writeFileSync(join(root, "tools/frozen-hooks.json"), JSON.stringify(pins, null, 2) + "\n");
+      writeFileSync(join(root, "VERSION"), `${version}\n`);
+      writeFileSync(join(root, "CHANGES.md"), `# CHANGES\n\n## ${version} - Next\n\nRerun the installer.\n\n` + readFileSync(join(root, "CHANGES.md"), "utf8").replace(/^# CHANGES\n\n/, ""));
+    };
+    writeFileSync(join(root, "VERSION"), "9.0.0-rc.2\n");
+    git(root, "commit", "-qam", "9.0.0-rc.2");
+    git(root, "push", "-q", "origin", "HEAD:refs/heads/main");
+    git(root, "checkout", "-qb", "branch");
+    // Main ships 9.0.0-rc.3 with hook A after the branch is cut, and the
+    // branch's own origin/main still points at 9.0.0-rc.2.
+    release("9.0.0-rc.3", "startup|resume");
+    git(root, "commit", "-qam", "main ships 9.0.0-rc.3 with hook A");
+    git(root, "push", "-q", "origin", "HEAD:refs/heads/main");
+    git(root, "reset", "-q", "--hard", "HEAD~1");
+    git(root, "update-ref", "refs/remotes/origin/main", "HEAD");
+
+    release("9.0.0-rc.3", "startup|clear");
+    expect(problems(root)).toEqual([
+      `${hooks} differs from origin/main, which ships 9.0.0-rc.3, so this change needs a VERSION newer than that, not 9.0.0-rc.3`,
+    ]);
+    git(root, "checkout", "-q", ".");
+    release("9.0.0-rc.1", "startup|clear");
+    expect(problems(root)).toEqual([
+      `${hooks} differs from origin/main, which ships 9.0.0-rc.3, so this change needs a VERSION newer than that, not 9.0.0-rc.1`,
+    ]);
+    git(root, "checkout", "-q", ".");
+    release("9.0.0-rc.4", "startup|clear");
+    expect(problems(root)).toEqual([]);
   });
 
   test("problems reports a root with no plugin directory, down to the last check, and does not throw", () => {
@@ -617,7 +660,10 @@ describe("frozen hook entries", () => {
     expect(faults({ pins: stale })).toEqual([stalePin]);
     expect(faults({ pins: stale, shipped: { version: "2.0.0", files: {} } })).toEqual([stalePin]);
     expect(faults({ pins: stale, version: "2.0.0" })).toEqual([
-      `${path} differs from origin/main, which already ships 2.0.0, so this change needs a new VERSION`,
+      `${path} differs from origin/main, which ships 2.0.0, so this change needs a VERSION newer than that, not 2.0.0`,
+    ]);
+    expect(faults({ pins: { [path]: { sha256: hookDigest(changed), changedIn: "2.0.0-rc.9" } }, version: "2.0.0-rc.9" })).toEqual([
+      `${path} differs from origin/main, which ships 2.0.0, so this change needs a VERSION newer than that, not 2.0.0-rc.9`,
     ]);
   });
 
