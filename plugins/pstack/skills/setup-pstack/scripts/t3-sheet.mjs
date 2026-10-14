@@ -4,8 +4,8 @@
 // `<providerInstanceId>/<modelId>` plus `<optionId>=<value>` pairs, or
 // `inherit-parent` (alias `auto`). An entry maps one to one onto a
 // `delegate_task` target, so this file is the only place the grammar lives:
-// the generator checks the models.json `t3` block with it, and setup-pstack
-// checks a sheet against the live `orchestrator_capabilities` catalog with it.
+// the generator checks the models.json tiers with it, and setup-pstack checks
+// a sheet against the live `orchestrator_capabilities` catalog with it.
 //
 //   node t3-sheet.mjs <sheet.md> <catalog.json>
 //
@@ -64,20 +64,21 @@ export function parseSheet(markdown) {
 }
 
 // Problems with a parsed sheet, for the role vocabulary of models.json (each
-// role with its `tier`), its `t3` tier defaults, and an
-// `orchestrator_capabilities` catalog. A role with no line runs on its tier's
-// default, so that default must dispatch here too.
+// role with its `tier`, and the `alias` a released sheet may still use), its
+// tier defaults, and an `orchestrator_capabilities` catalog. A role with no
+// line runs on its tier's default, so that default must dispatch here too.
 export function checkSheet(sheet, { roles, defaults, catalog }) {
   const problems = [];
-  const byRole = new Map(roles.map((r) => [r.role, r]));
+  const byRole = new Map(roles.flatMap((r) => [[r.role, r], ...(r.alias ? [[r.alias, r]] : [])]));
   const seen = new Set();
   for (const { line, key, value } of sheet) {
     if (!key) {
       problems.push(`line ${line}: not a "<role>: <value>" line (lowercase role, one space after the colon, no indent or markup)`);
       continue;
     }
-    if (seen.has(key)) problems.push(`"${key}" appears twice; only one line may set it`);
-    seen.add(key);
+    const canonical = byRole.get(key)?.role ?? key;
+    if (seen.has(canonical)) problems.push(`"${key}" appears twice; only one line may set it`);
+    seen.add(canonical);
     if (key === "session hook") {
       if (!HOOK_VALUES.includes(value)) problems.push(`session hook: "${value}" is not on or off`);
       continue;
@@ -154,10 +155,10 @@ if (invoked === fileURLToPath(import.meta.url)) {
     console.error("usage: t3-sheet.mjs <sheet.md> <catalog.json>");
     process.exit(2);
   }
-  const { roles, t3 } = JSON.parse(readFileSync(new URL("../../../models.json", import.meta.url), "utf8"));
+  const { roles, tiers } = JSON.parse(readFileSync(new URL("../../../models.json", import.meta.url), "utf8"));
   const problems = checkSheet(parseSheet(readFileSync(sheetPath, "utf8")), {
-    roles: roles.map((r) => ({ ...r, tier: r.models })),
-    defaults: t3,
+    roles,
+    defaults: tiers,
     catalog: JSON.parse(readFileSync(catalogPath, "utf8")),
   });
   for (const problem of problems) console.log(problem);
