@@ -182,10 +182,7 @@ export interface ReadyPr {
     readonly ci: CiClean | CiNone;
     readonly gate: {
       readonly state: "OPEN";
-      readonly reviewDecision: Exclude<
-        ReviewDecision,
-        "CHANGES_REQUESTED" | "REVIEW_REQUIRED"
-      >;
+      readonly reviewDecision: Exclude<ReviewDecision, "CHANGES_REQUESTED">;
       readonly draft: "not-draft" | "draft-allowed";
     };
   };

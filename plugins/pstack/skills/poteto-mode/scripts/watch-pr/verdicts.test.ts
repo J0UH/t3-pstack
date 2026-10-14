@@ -27,7 +27,7 @@ import {
   readSnapshot,
   selectTierMajorStackDecision,
 } from "./policy.ts";
-import type { GitHubReader, NonEmpty, PrSnapshot } from "./types.ts";
+import type { GitHubReader, NonEmpty, PrContext, PrSnapshot } from "./types.ts";
 import { parsePrNumber } from "./types.ts";
 
 const context = (number: number) => ({
@@ -35,6 +35,40 @@ const context = (number: number) => ({
   repo: "repo",
   number: parsePrNumber(number),
 });
+
+// A clock that moves only when the watcher sleeps, so a reader can change what
+// GitHub reports between polls.
+function tickingRuntime() {
+  let now = 0;
+  const stdout: string[] = [];
+  return {
+    now: () => now,
+    verdicts: () => stdout.map((line) => JSON.parse(line) as unknown),
+    runtime: (reader: GitHubReader): CliRuntime => ({
+      reader,
+      clock: {
+        now: () => now,
+        observedAt: () =>
+          new Date(
+            Date.parse("2026-07-26T00:00:00.000Z") + now * 1_000
+          ).toISOString(),
+        async sleep(seconds) {
+          now += seconds;
+          if (now > 3_600) throw new Error("watched for over an hour");
+        },
+      },
+      stdout: (value) => stdout.push(value),
+      stderr: () => {},
+    }),
+  };
+}
+
+// gh reports no checks, and the head commit has no rollup.
+const noChecks = {
+  fastPath: { kind: "none-reported" },
+  rollupPages: [{ kind: "no-rollup" }],
+  commitRollups: [{ oid: "head", state: null }],
+} as const;
 
 function testRuntime(reader: GitHubReader) {
   const stdout: string[] = [];
@@ -193,8 +227,156 @@ describe("review gate", () => {
     const watch = testRuntime(reader());
     expect(await main([...single, "--pretty"], watch.runtime)).toBe(6);
     expect(watch.stdout.join("")).toBe(
-      "BLOCKER: review-required\npr=1\naction=get the required approving review\n"
+      "BLOCKER: review-required\npr=1\naction=human action needed: a required approving review is missing; report it and wait for a reviewer\n"
     );
+  });
+
+  it("gates only the stack's frontier on a review or branch protection", async () => {
+    const approved = await readSnapshot({
+      reader: fakeReader(),
+      context: context(31),
+      pendingHistory: "include",
+      allowDraft: false,
+    });
+    const needsReview = await readSnapshot({
+      reader: fakeReader({
+        facts: {
+          reviewDecision: "REVIEW_REQUIRED",
+          mergeStateStatus: "BLOCKED",
+        },
+      }),
+      context: context(32),
+      pendingHistory: "include",
+      allowDraft: false,
+    });
+    expect(selectTierMajorStackDecision([approved, needsReview])).toMatchObject(
+      { kind: "clear", prs: [{ kind: "ready-pr" }, { kind: "ready-pr" }] }
+    );
+    expect(selectTierMajorStackDecision([needsReview, approved])).toMatchObject(
+      {
+        kind: "blocker",
+        blocker: {
+          kind: "merge-gate",
+          pr: context(32),
+          reason: "review-required",
+        },
+      }
+    );
+  });
+
+  it("waits on a queued frontier while the PRs above it need review, then stops at the next one", async () => {
+    const base = fakeReader();
+    let frontierReads = 0;
+    const reader = {
+      ...base,
+      async pullRequest(pr: PrContext) {
+        const facts = await base.pullRequest(pr);
+        if (pr.number !== 1)
+          return {
+            ...facts,
+            reviewDecision: "REVIEW_REQUIRED" as const,
+            mergeStateStatus: "BLOCKED" as const,
+          };
+        frontierReads += 1;
+        return frontierReads === 1
+          ? facts
+          : {
+              ...facts,
+              state: "MERGED" as const,
+              mergedAt: "2026-07-26T00:01:00Z",
+            };
+      },
+    } satisfies GitHubReader;
+    const watch = tickingRuntime();
+    expect(
+      await main(
+        [
+          "--owner",
+          "owner",
+          "--repo",
+          "repo",
+          "--queued-stack",
+          "--stack-prs",
+          "1,2,3",
+        ],
+        watch.runtime(reader)
+      )
+    ).toBe(6);
+    expect(watch.verdicts()).toMatchObject([
+      { kind: "QUEUE" },
+      { kind: "STATUS", reason: "whole-stack-sweep" },
+      {
+        kind: "WAITING",
+        frontier: { number: 1 },
+        reason: { kind: "merge-queue", unmergedCount: 3 },
+      },
+      {
+        kind: "BLOCKER",
+        exitCode: 6,
+        blocker: {
+          kind: "merge-gate",
+          pr: { number: 2 },
+          reason: "review-required",
+        },
+      },
+    ]);
+  });
+});
+
+describe("a just-pushed head that GitHub blocks before any check registers", () => {
+  // Reads `noChecks` and BLOCKED until `registersAt`, then a pending required
+  // check, then the check passed and the PR clean.
+  function pushedReader(now: () => number, registersAt: number) {
+    const phases = [
+      fakeReader({ ...noChecks, facts: { mergeStateStatus: "BLOCKED" } }),
+      fakeReader({
+        facts: { mergeStateStatus: "BLOCKED" },
+        fastPath: { kind: "checks", checks: [pendingCheck()] },
+        commitRollups: [{ oid: "head", state: "PENDING" }],
+      }),
+      fakeReader(),
+    ] as const;
+    const at = () =>
+      phases[now() < registersAt ? 0 : now() < registersAt + 60 ? 1 : 2];
+    return {
+      ...phases[0],
+      pullRequest: (pr: PrContext) => at().pullRequest(pr),
+      checksFastPath: (pr: PrContext) => at().checksFastPath(pr),
+      checkRollupPage: async () => ({ kind: "no-rollup" }) as const,
+      commitRollups: (pr: PrContext) => at().commitRollups(pr),
+    } satisfies GitHubReader;
+  }
+
+  it("waits for the required check with the settle window off", async () => {
+    const watch = tickingRuntime();
+    expect(await main(single, watch.runtime(pushedReader(watch.now, 60)))).toBe(
+      0
+    );
+    expect(watch.verdicts()).toMatchObject([
+      {
+        kind: "RETRY",
+        failure: { kind: "checks-unavailable" },
+        retryInSeconds: 60,
+      },
+      { kind: "WAITING", reason: { kind: "pending-checks" } },
+      { kind: "READY", exitCode: 0 },
+    ]);
+  });
+
+  it("stops at the merge gate once the block has held for 60 seconds", async () => {
+    const watch = tickingRuntime();
+    expect(
+      await main(single, watch.runtime(pushedReader(watch.now, Infinity)))
+    ).toBe(6);
+    expect(watch.now()).toBe(60);
+    expect(watch.verdicts()).toMatchObject([
+      { kind: "RETRY", failure: { kind: "checks-unavailable" } },
+      {
+        kind: "BLOCKER",
+        exitCode: 6,
+        blocker: { kind: "merge-gate", reason: "merge-blocked" },
+      },
+    ]);
   });
 });
 
@@ -302,11 +484,6 @@ describe("checks with none configured", () => {
 });
 
 describe("a PR with no checks configured", () => {
-  const noChecks = {
-    fastPath: { kind: "none-reported" },
-    rollupPages: [{ kind: "no-rollup" }],
-    commitRollups: [{ oid: "head", state: null }],
-  } as const;
   const read = (overrides: Parameters<typeof fakeReader>[0] = {}) =>
     readSnapshot({
       reader: fakeReader({ ...noChecks, ...overrides }),
@@ -448,38 +625,49 @@ console.log(JSON.stringify(value));
     );
     return {
       status: result.status,
-      verdict: JSON.parse(result.stdout.trim()) as unknown,
+      verdicts: result.stdout
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as unknown),
     };
   }
 
   it("finishes a status-only pass", () => {
     expect(run("clean", ["--status-only"])).toMatchObject({
       status: 0,
-      verdict: {
-        kind: "STATUS",
-        terminal: true,
-        rows: [{ kind: "open", ci: { kind: "ci-none" } }],
-      },
+      verdicts: [
+        {
+          kind: "STATUS",
+          terminal: true,
+          rows: [{ kind: "open", ci: { kind: "ci-none" } }],
+        },
+      ],
     });
   });
 
   it("reports a clean PR as READY", () => {
     expect(run("clean", [])).toMatchObject({
       status: 0,
-      verdict: {
-        kind: "READY",
-        scope: { pr: { kind: "ready-pr", proof: { ci: { kind: "ci-none" } } } },
-      },
+      verdicts: [
+        {
+          kind: "READY",
+          scope: {
+            pr: { kind: "ready-pr", proof: { ci: { kind: "ci-none" } } },
+          },
+        },
+      ],
     });
   });
 
-  it("stops at the merge gate when GitHub blocks the PR", () => {
-    expect(run("blocked", [])).toMatchObject({
-      status: 6,
-      verdict: {
-        kind: "BLOCKER",
-        blocker: { kind: "merge-gate", reason: "merge-blocked" },
-      },
+  it("does not stop at the merge gate on the first read of a blocked PR", () => {
+    expect(
+      run("blocked", ["--max-query-errors", "2", "--timeout", "0.001"])
+    ).toMatchObject({
+      status: 5,
+      verdicts: [
+        { kind: "RETRY", failure: { kind: "checks-unavailable" } },
+        { kind: "TIMEOUT", reason: { kind: "status-unavailable" } },
+      ],
     });
   });
 
@@ -487,7 +675,7 @@ console.log(JSON.stringify(value));
     for (const scenario of ["unauthorized", "rollup-fails"])
       expect(run(scenario, ["--status-only"])).toMatchObject({
         status: 7,
-        verdict: { kind: "BLOCKER", blocker: { kind: "status-query" } },
+        verdicts: [{ kind: "BLOCKER", blocker: { kind: "status-query" } }],
       });
   });
 });
