@@ -233,6 +233,17 @@ function checkDetails(value: Record<string, unknown>, nameKey: string) {
     workflow: typeof value.workflow === "string" ? value.workflow : "",
   };
 }
+// gh buckets every state it does not name as pending, including completed
+// conclusions like STALE and STARTUP_FAILURE. Only these are in flight, the
+// same states mapRollupNode treats as pending.
+const IN_FLIGHT_STATES = new Set([
+  "EXPECTED",
+  "REQUESTED",
+  "WAITING",
+  "QUEUED",
+  "PENDING",
+  "IN_PROGRESS",
+]);
 export function parseFastCheck(value: unknown): T.Check {
   const object = record(value, "check");
   const details = checkDetails(object, "name");
@@ -241,7 +252,8 @@ export function parseFastCheck(value: unknown): T.Check {
   if (state === "ACTION_REQUIRED") return gateOr("failed", details, state);
   if (bucket === "fail" || ["FAILURE", "ERROR"].includes(state))
     return { ...details, kind: "failed", reportedState: state };
-  if (bucket === "pending") return gateOr("pending", details, state);
+  if (bucket === "pending" && IN_FLIGHT_STATES.has(state))
+    return gateOr("pending", details, state);
   if (bucket === "pass")
     return { ...details, kind: "passed", reportedState: state };
   if (bucket === "skipping")
@@ -538,6 +550,13 @@ export class GhGitHubReader implements T.GitHubReader {
         if (!(error instanceof WatcherQueryError)) throw error;
       }
     }
+    // Only this stderr line means gh read the head commit and found no checks.
+    // Any other exit 1 is a failed query.
+    if (
+      result.code === 1 &&
+      firstLine(result.stderr).startsWith("no checks reported on the ")
+    )
+      return { kind: "none-reported" };
     return { kind: "unusable", exitCode: result.code, stderr: result.stderr };
   }
   async checkRollupPage(
@@ -556,8 +575,7 @@ export class GhGitHubReader implements T.GitHubReader {
       at(commits[commits.length - 1], ["commit"]),
       "commit"
     );
-    if (commit.statusCheckRollup === null)
-      return { checks: [], endCursor: null };
+    if (commit.statusCheckRollup === null) return { kind: "no-rollup" };
     const contexts = record(
       at(commit, ["statusCheckRollup", "contexts"]),
       "contexts"
@@ -619,18 +637,30 @@ export async function resolveChecks(
   const direct = fast.kind === "checks" ? nonEmpty(fast.checks) : null;
   if (direct !== null) return { source: "gh-pr-checks", checks: direct };
   const checks: T.Check[] = [];
+  let headHasRollup = true;
   let after: string | null = null;
   do {
     const page = await reader.checkRollupPage(context, after);
+    if ("kind" in page) {
+      headHasRollup = false;
+      break;
+    }
     checks.push(...page.checks);
     after = page.endCursor;
   } while (after !== null);
   const fallback = nonEmpty(checks);
   if (fallback !== null) return { source: "graphql-rollup", checks: fallback };
+  // Both reads have to say it. A null rollup beside a failed fast path can be a
+  // credential that cannot see checks, and a rollup that exists but maps to no
+  // check can hold a context type this reader does not know.
+  if (fast.kind === "none-reported" && !headHasRollup)
+    return { source: "none", checks: [] };
   const suffix =
     fast.kind === "unusable"
       ? `fast path exit=${fast.exitCode}; GraphQL rollup was empty${firstLine(fast.stderr) ? `; ${firstLine(fast.stderr)}` : ""}`
-      : "fast path and GraphQL rollup were empty";
+      : fast.kind === "none-reported"
+        ? "fast path reported no checks; GraphQL rollup exists but listed no readable check"
+        : "fast path and GraphQL rollup were empty";
   throw new ChecksUnavailable(`could not read PR checks: ${suffix}`);
 }
 export async function resolveReviewThreads(

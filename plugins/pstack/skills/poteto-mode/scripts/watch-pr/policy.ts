@@ -1,4 +1,5 @@
 import {
+  ChecksUnavailable,
   WatcherQueryError,
   resolveChecks,
   resolveReviewThreads,
@@ -45,10 +46,35 @@ async function mergeAssessment(
     hadPreviousPassingCi: commits.some(
       (commit) => commit.oid !== facts.headRefOid && commit.state === "SUCCESS"
     ),
+    anyCommitReported: commits.some((commit) => commit.state !== null),
     github: assessGitHubMerge({
       mergeStateStatus: facts.mergeStateStatus,
       headRollupState,
     }),
+  };
+}
+// Right after a push the head rollup is null until the first check registers.
+// An earlier commit that reported checks, or mergeability GitHub is still
+// computing, means the head has not reported yet.
+async function noChecksCi(
+  reader: T.GitHubReader,
+  facts: T.PullRequestFacts
+): Promise<T.CiNone> {
+  const merge = await mergeAssessment(reader, facts);
+  if (merge.anyCommitReported || merge.github.kind === "refused")
+    throw new ChecksUnavailable(
+      `no checks reported on head ${facts.headRefOid}, but a commit on this PR has reported checks`
+    );
+  if (facts.mergeable === "UNKNOWN")
+    throw new ChecksUnavailable(
+      `no checks reported on head ${facts.headRefOid}, and GitHub has not computed mergeability yet`
+    );
+  return {
+    kind: "ci-none",
+    failed: [],
+    pending: [],
+    hadPreviousPassingCi: false,
+    github: merge.github,
   };
 }
 const AUTOMATION_TOKENS = [
@@ -71,18 +97,20 @@ export async function readSnapshot(args: {
     return { kind: "closed", context: args.context, facts };
   const threads = await resolveReviewThreads(args.reader, args.context);
   const checks = await resolveChecks(args.reader, args.context);
+  const reported: readonly T.Check[] = checks.checks;
   const failed = nonEmpty(
-    checks.checks.filter(
+    reported.filter(
       (check): check is T.FailedCheck => check.kind === "failed"
     )
   );
   const pending = nonEmpty(
-    checks.checks.filter(
+    reported.filter(
       (check): check is T.PendingCheck => check.kind === "pending"
     )
   );
   let ci: T.CiState;
-  if (failed === null && pending !== null && args.pendingHistory === "omit")
+  if (checks.source === "none") ci = await noChecksCi(args.reader, facts);
+  else if (failed === null && pending !== null && args.pendingHistory === "omit")
     ci = {
       kind: "ci-pending",
       source: checks.source,
@@ -167,17 +195,26 @@ function gateReason(
   if (row.kind === "merged") return null;
   if (row.kind === "closed") return "closed-without-merge";
   if (row.facts.isDraft && !allowDraft) return "draft-pr";
-  return row.facts.reviewDecision === "CHANGES_REQUESTED"
-    ? "changes-requested"
-    : null;
+  if (row.facts.reviewDecision === "CHANGES_REQUESTED")
+    return "changes-requested";
+  if (row.facts.reviewDecision === "REVIEW_REQUIRED") return "review-required";
+  // BLOCKED with clean CI is some other branch protection rule, such as signed
+  // commits or a required check that never reported. GitHub will not merge it.
+  return row.facts.mergeStateStatus === "BLOCKED" ? "merge-blocked" : null;
 }
+// Gates that pending checks or a settling review can still explain wait first.
+const DEFERRED_WHILE_WAITING: ReadonlySet<T.MergeGateReason> = new Set([
+  "draft-pr",
+  "review-required",
+  "merge-blocked",
+]);
 function gateBlocker(
   row: T.PrSnapshot,
   allowDraft: boolean
 ): T.MergeBlocker | null {
   const reason = gateReason(row, allowDraft);
   return reason === null ||
-    (reason === "draft-pr" &&
+    (DEFERRED_WHILE_WAITING.has(reason) &&
       row.kind === "open" &&
       (row.ci.kind === "ci-pending" || row.settle.kind === "settling"))
     ? null
@@ -195,14 +232,18 @@ function readyContribution(
     };
   if (
     row.kind !== "open" ||
-    row.ci.kind !== "ci-clean" ||
+    (row.ci.kind !== "ci-clean" && row.ci.kind !== "ci-none") ||
     row.threads.length !== 0 ||
     conflictBlocker(row) !== null ||
     gateReason(row, allowDraft) !== null
   )
     return null;
   const reviewDecision = row.facts.reviewDecision;
-  if (reviewDecision === "CHANGES_REQUESTED") return null;
+  if (
+    reviewDecision === "CHANGES_REQUESTED" ||
+    reviewDecision === "REVIEW_REQUIRED"
+  )
+    return null;
   return {
     kind: "ready-pr",
     context: row.context,

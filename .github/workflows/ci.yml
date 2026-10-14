@@ -123,7 +123,7 @@ jobs:
       # own TypeScript. Pinned here, not in package.json, so bun.lock stays
       # identical to upstream's.
       - name: Check formatting
-        run: bunx prettier@3.6.2 --check watch-pr/settle.ts watch-pr/settle.test.ts resolve-codex-transcript.ts
+        run: bunx prettier@3.6.2 --check watch-pr/settle.ts watch-pr/settle.test.ts watch-pr/verdicts.test.ts resolve-codex-transcript.ts
 
   shellcheck:
     name: Shell scripts
