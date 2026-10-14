@@ -122,6 +122,41 @@ describe("review gate", () => {
     expect(classifyPr(snapshot)).toMatchObject({ kind: "waiting" });
   });
 
+  it("waits out t3-pstack's review settle window before reporting the review gate", async () => {
+    const read = (settling: boolean) =>
+      readSnapshot({
+        reader: fakeReader({
+          facts: {
+            reviewDecision: "REVIEW_REQUIRED",
+            mergeStateStatus: "BLOCKED",
+          },
+        }),
+        context: context(27),
+        pendingHistory: "include",
+        allowDraft: false,
+        settler: async () =>
+          settling
+            ? {
+                kind: "settling",
+                since: { at: "2026-07-26T00:00:00.000Z", source: "push" },
+                lastActivityAt: null,
+                endsAt: "2026-07-26T00:05:00.000Z",
+                secondsLeft: 300,
+                heldBy: "activity",
+              }
+            : {
+                kind: "settled",
+                since: { at: "2026-07-26T00:00:00.000Z", source: "push" },
+                lastActivityAt: null,
+              },
+      });
+    expect(classifyPr(await read(true))).toMatchObject({ kind: "settling" });
+    expect(classifyPr(await read(false))).toMatchObject({
+      kind: "blocker",
+      blocker: { kind: "merge-gate", reason: "review-required" },
+    });
+  });
+
   it("still reports changes requested as a merge-gate blocker", async () => {
     const snapshot = await readSnapshot({
       reader: fakeReader({
