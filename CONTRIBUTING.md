@@ -63,6 +63,12 @@ bunx prettier@3.6.2 --check watch-pr/settle.ts watch-pr/settle.test.ts resolve-c
 
 Upstream's scripts are not Prettier output, so the format check covers the port's own TypeScript only.
 
+If you touched the installer (`tools/install.mjs` or `tools/install/`), also run its end-to-end test. It needs the `claude` and `codex` CLIs, runs in a throwaway `HOME`, and takes a few minutes:
+
+```shell
+T3_PSTACK_E2E=1 GIT_CONFIG_GLOBAL=/dev/null bun test tests/install-e2e.test.mjs --timeout 300000
+```
+
 If you touched a workflow, audit it before pushing:
 
 ```shell
