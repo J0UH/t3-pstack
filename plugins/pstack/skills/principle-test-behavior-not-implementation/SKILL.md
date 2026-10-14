@@ -1,7 +1,7 @@
 ---
 name: principle-test-behavior-not-implementation
 description: "Apply when you write, change, or keep a test. Call the code as its users do and assert the exact result they see. Rewrite or delete a test that would pass if every imported function returned undefined."
-user-invocable: false
+disable-model-invocation: true
 ---
 
 # Test Behavior, Not Implementation
@@ -18,4 +18,4 @@ These shapes fail that check:
 
 Fix: call the subject in the test body with one concrete input and assert the literal output or effect. For a mock, assert the payload it received. For an absence, also assert the presence on another input. For a constant, test the mechanism that reads it with one input instead of restating the value.
 
-Keep relation checks across table rows (a key in two tables, a parent that exists) and `*.test-d.ts` type checks. Keep an absence-only test when the contract requires the absence and making the subject produce it fails the test: a denied operation must send no email, so temporarily make the denied path send one and watch the test fail. Keep a constant pin when the value is a promise to users, such as a documented default, and name that promise.
+Keep relation checks across table rows (a key in two tables, a parent that exists) and `*.test-d.ts` type checks.
