@@ -20,8 +20,9 @@
 //
 // Also validated: skill frontmatter, the skills tree's links,
 // the plugin layout, agent frontmatter, the Codex marketplace, and both hooks
-// files.
+// files against their pins in tools/frozen-hooks.json.
 
+import { createHash } from "node:crypto";
 import {
   existsSync,
   lstatSync,
@@ -378,6 +379,38 @@ export function validateHooks(hooksJson, { statOf, file = "hooks/hooks.json", ro
   if (faults.length) throw new Error(`${file}:\n  ${faults.join("\n  ")}`);
 }
 
+// Codex trusts a plugin hook by a hash of its entry, and a Git marketplace
+// delivers a new entry at the next app-server start, so a changed hooks file
+// silently stops the hook in every home until the installer trusts it again.
+// Each hooks file is pinned with the release that last changed it, and that
+// release's CHANGES entry must tell users to rerun the installer.
+export const FROZEN_HOOKS = "tools/frozen-hooks.json";
+export const hookDigest = (text) => createHash("sha256").update(JSON.stringify(JSON.parse(text))).digest("hex");
+
+export function frozenHookFaults({ pins, files, version, changelog }) {
+  const faults = Object.keys(files)
+    .filter((path) => !Object.hasOwn(pins, path))
+    .map((path) => `${path} has no pin in ${FROZEN_HOOKS}`);
+  const entry = changelog.split(/^## /m).find((section) => section.startsWith(`${version} `)) ?? "";
+  for (const [path, pin] of Object.entries(pins)) {
+    if (!Object.hasOwn(files, path)) {
+      faults.push(`${FROZEN_HOOKS} pins ${path}, which no manifest names`);
+      continue;
+    }
+    const digest = hookDigest(files[path]);
+    if (digest !== pin.sha256) {
+      faults.push(
+        `${path} changed, which stops its hook in every Codex home until the installer reruns. ` +
+          `Pin "sha256": "${digest}" and "changedIn": "${version}" in ${FROZEN_HOOKS}, ` +
+          `and tell users to rerun the installer in CHANGES.md's ${version} entry.`,
+      );
+    } else if (pin.changedIn === version && !/rerun the installer/i.test(entry)) {
+      faults.push(`${path} changes in ${version}, but CHANGES.md's ${version} entry does not tell users to rerun the installer`);
+    }
+  }
+  return faults;
+}
+
 // Every file the generator writes, as exact text by repo-relative path,
 // computed from the sources under `root` without writing. Any other entry in
 // an owned directory is an orphan. Throws when a source cannot be planned.
@@ -489,9 +522,20 @@ export function problems(root, models) {
     if (!existsSync(full) || !pathIsInside(realpathSync(pluginRoot), realpathSync(full))) return null;
     return statSync(full);
   };
-  for (const file of ["hooks/hooks.json", ...(codex?.hooks ? [codex.hooks.replace(/^\.\//, "")] : [])]) {
+  const hookFiles = ["hooks/hooks.json", ...(codex?.hooks ? [codex.hooks.replace(/^\.\//, "")] : [])];
+  for (const file of hookFiles) {
     attempt(() => validateHooks(readFileSync(join(pluginRoot, file), "utf8"), { statOf, file }));
   }
+  // A Codex manifest that does not parse names no hooks file to compare.
+  if (codex) attempt(() => {
+    const faults = frozenHookFaults({
+      pins: JSON.parse(read(FROZEN_HOOKS)),
+      files: Object.fromEntries(hookFiles.map((file) => [`${PLUGIN}/${file}`, read(`${PLUGIN}/${file}`)])),
+      version: read("VERSION").trim(),
+      changelog: read("CHANGES.md"),
+    });
+    if (faults.length) throw new Error(faults.join("\n"));
+  });
   return failures;
 }
 

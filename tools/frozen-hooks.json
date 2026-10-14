@@ -1,0 +1,10 @@
+{
+  "plugins/pstack/hooks/hooks.json": {
+    "sha256": "95229a0e55867feef1b7e85e21738cf3df63ba66e79d3a2a805c73d683509c3b",
+    "changedIn": "0.9.47"
+  },
+  "plugins/pstack/hooks/codex-hooks.json": {
+    "sha256": "40d3c6f0c4b4038d900bb0e84eda481dd1f42e9069506431abe6adfdefba5123",
+    "changedIn": "0.9.66"
+  }
+}

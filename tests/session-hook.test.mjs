@@ -70,26 +70,6 @@ describe("SessionStart hook", () => {
     expect(sessionStart.codex.matcher).toBe("startup|resume|clear|compact");
   });
 
-  // Codex trusts a plugin hook by a hash of its entry, so a changed command,
-  // matcher, or timeout silently stops routing on Codex until the user trusts
-  // it again. The script and the routing text can change freely.
-  test("keeps the hook entries released in 1.0.14", () => {
-    expect(sessionStart.claude).toEqual({
-      matcher: "startup|resume|clear|compact",
-      hooks: [{ type: "command", command: '"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh" claude' }],
-    });
-    expect(sessionStart.codex).toEqual({
-      matcher: "startup|resume|clear|compact",
-      hooks: [
-        {
-          type: "command",
-          command: '"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh" codex',
-          commandWindows: 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/hooks/session-start.ps1"',
-        },
-      ],
-    });
-  });
-
   test("names only skills that exist", () => {
     const named = [...mandate.matchAll(/(?:pstack:|`\/)([a-z0-9-]+)/g)].map((m) => m[1]);
     const skills = new Set(agentSkills(join(pluginRoot, "skills")).map(({ name }) => name));
