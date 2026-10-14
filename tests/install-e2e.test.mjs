@@ -3,7 +3,7 @@
 // T3_PSTACK_E2E=1; it needs both CLIs and takes about a minute. This checkout
 // is the marketplace source. The Codex probe turn has no credentials, so it
 // fails at the model call, after the session-start hook has run.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -20,10 +20,11 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { delimiter, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { AppServer } from "../tools/install/codex.mjs";
+import { resolveCli } from "../tools/install/common.mjs";
 import { hookDigest } from "../tools/plugin.mjs";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -375,5 +376,111 @@ describe.skipIf(!enabled)("the installer, on a release that changes the hook ent
     const after = await probe(join(home, ".codex"));
     expect(after.hookEvents).toEqual(["hook/started", "hook/completed"]);
     expect(after.routedMessages).toBe(1);
+  }, 300_000);
+});
+
+describe.skipIf(!enabled)("the installer, on a Codex home that changes while it trusts the hook", () => {
+  isolate({});
+  const path = process.env.PATH;
+  const hooksFile = () => join(home, ".codex/plugins/cache/t3-pstack/t3-pstack", version, "hooks/codex-hooks.json");
+  const configFile = () => join(home, ".codex/config.toml");
+  const attack = (at, files) => writeFileSync(process.env.CODEX_ATTACK, JSON.stringify({ at, files }));
+  let genuine;
+  let config;
+  let malicious;
+  let marked;
+
+  async function withCodex(use) {
+    const server = await AppServer.start({ dir: join(home, ".codex"), bin: "codex" });
+    try {
+      return await use(server);
+    } finally {
+      server.close();
+    }
+  }
+  const trustState = () => withCodex(async (server) => (await server.request("config/read", {})).config.hooks?.state ?? null);
+
+  beforeAll(() => {
+    const bin = join(root, "bin");
+    mkdirSync(bin);
+    writeFileSync(join(bin, "codex"), `#!/bin/sh\nexec node "${join(repoRoot, "tests/codex-attacker.mjs")}" "$@"\n`, { mode: 0o755 });
+    process.env.REAL_CODEX = resolveCli("codex");
+    process.env.CODEX_ATTACK = join(root, "attack.json");
+    process.env.PATH = `${bin}${delimiter}${path}`;
+    expect(installer("install").status).toBe(0);
+    genuine = readFileSync(hooksFile(), "utf8");
+    config = readFileSync(configFile(), "utf8").replace(/\n\[hooks\.state[^]*$/, "\n");
+    marked = join(root, "hook-ran");
+    malicious = genuine.replace(/"command": "[^\n]*",\n/, `"command": "touch ${marked}",\n`);
+  });
+
+  // Each test starts from the installed plugin with its hook untrusted.
+  beforeEach(() => {
+    rmSync(process.env.CODEX_ATTACK, { force: true });
+    rmSync(hooksFile());
+    writeFileSync(hooksFile(), genuine);
+    writeFileSync(configFile(), config);
+  });
+
+  afterAll(() => {
+    process.env.PATH = path;
+    delete process.env.REAL_CODEX;
+    delete process.env.CODEX_ATTACK;
+  });
+
+  test("trusts nothing from a hooks file that is a symlink, even to the pinned text", async () => {
+    const copy = join(root, "codex-hooks.json");
+    writeFileSync(copy, genuine);
+    rmSync(hooksFile());
+    symlinkSync(copy, hooksFile());
+    const { status, report } = installer("install");
+    expect(status).toBe(1);
+    expect(row(report, ".codex").steps).toEqual([]);
+    expect(failing(row(report, ".codex").checks)).toEqual([
+      `session-start hook trusted: ${HOOK} untrusted, not from the hooks/codex-hooks.json this release pins`,
+    ]);
+    expect(await trustState()).toBe(null);
+  }, 300_000);
+
+  test("trusts nothing when the hooks file Codex listed is swapped for the pinned one before the installer reads it", async () => {
+    writeFileSync(hooksFile(), malicious);
+    attack("after hooks/list", { [hooksFile()]: genuine });
+    const { status, report } = installer("install");
+    expect(existsSync(process.env.CODEX_ATTACK)).toBe(false);
+    expect(status).toBe(1);
+    expect(row(report, ".codex").steps).toEqual([]);
+    expect(failing(row(report, ".codex").checks)).toEqual([`session-start hook trusted: ${HOOK} untrusted`]);
+    expect(await trustState()).toBe(null);
+
+    // The attacker's entry, back for the next session, does not run.
+    writeFileSync(hooksFile(), malicious);
+    const after = await probe(join(home, ".codex"));
+    expect(after.hookEvents).toEqual([]);
+    expect(existsSync(marked)).toBe(false);
+  }, 300_000);
+
+  test("takes the trust back when the hooks file changes between the check and the trust write", async () => {
+    attack("before config/value/write", { [hooksFile()]: malicious });
+    const { status, report } = installer("install");
+    expect(existsSync(process.env.CODEX_ATTACK)).toBe(false);
+    expect(status).toBe(1);
+    expect(failing(row(report, ".codex").checks)).toEqual([
+      `install: Codex lists ${HOOK} modified with another entry after the trust write, so the installer took that trust back`,
+    ]);
+    expect(await trustState()).toBe(null);
+  }, 300_000);
+
+  test("trusts nothing when config.toml changes between the source check and the trust write", async () => {
+    const counterfeit = join(root, "counterfeit");
+    mkdirSync(counterfeit, { recursive: true });
+    attack("after hooks/list", { [configFile()]: config.replace(/^source = .*$/m, `source = ${JSON.stringify(counterfeit)}`) });
+    const { status, report } = installer("install");
+    expect(existsSync(process.env.CODEX_ATTACK)).toBe(false);
+    expect(status).toBe(1);
+    expect(failing(row(report, ".codex").checks)).toEqual([
+      'install: config/value/write: {"code":-32600,"data":{"config_write_error_code":"configVersionConflict"},' +
+        '"message":"Configuration was modified since last read. Fetch latest version and retry."}',
+    ]);
+    expect(await trustState()).toBe(null);
   }, 300_000);
 });

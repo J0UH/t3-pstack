@@ -4,9 +4,12 @@
 // `codex app-server`, which T3 runs, never does. So the installer trusts the
 // hook the way the TUI does, through the app-server, with the hash Codex
 // reports, on every install and update, once its hooks file is the one
-// tools/frozen-hooks.json pins.
+// tools/frozen-hooks.json pins. Only the hooks file is pinned, not the script
+// its command runs. Codex's own trust covers the entry alone, and the script
+// changes with each release, so the marketplace source check is what vouches
+// for the script.
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { hookDigest } from "../plugin.mjs";
@@ -121,14 +124,15 @@ function installedVersions(dir) {
   return existsSync(cache) ? readdirSync(cache).filter((name) => !name.startsWith(".")) : [];
 }
 
+const marketplaceSources = (config) => (config.marketplaces?.[MARKETPLACE] ? [codexSource(config.marketplaces[MARKETPLACE])] : []);
+
 async function pluginState(server, dir, skills) {
   const { config } = await server.request("config/read", {});
-  const marketplace = config.marketplaces?.[MARKETPLACE];
   const { marketplaces = [] } = await server.request("plugin/list", {});
   const plugin = marketplaces.flatMap((m) => m.plugins ?? []).find((p) => p.id === PLUGIN_ID);
   const versions = installedVersions(dir);
   return {
-    sources: marketplace ? [codexSource(marketplace)] : [],
+    sources: marketplaceSources(config),
     installed: plugin?.installed === true,
     enabled: plugin?.enabled === true,
     versions,
@@ -141,12 +145,39 @@ async function pluginHooks(server) {
   return data.flatMap((entry) => entry.hooks).filter((hook) => hook.pluginId === PLUGIN_ID);
 }
 
-// The hook's entry comes from the hooks file the Codex manifest names, with
-// the digest that file is pinned at.
-const isPinned = (hook, pin) =>
-  hook.sourcePath.replaceAll("\\", "/").endsWith(`/${pin.path}`) &&
-  existsSync(hook.sourcePath) &&
-  hookDigest(readFileSync(hook.sourcePath, "utf8")) === pin.sha256;
+// A file's text, read once without following a symlink, or null when it is a
+// symlink or not a regular file.
+function readRegularFile(path) {
+  if (!lstatSync(path, { throwIfNoEntry: false })?.isFile()) return null;
+  const fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  try {
+    return fstatSync(fd).isFile() ? readFileSync(fd, "utf8") : null;
+  } finally {
+    closeSync(fd);
+  }
+}
+
+// The listed hook is an entry of the hooks file the Codex manifest names, read
+// at the pinned digest. Codex hashes the file when it lists it, so the listed
+// event, matcher, and command must be an entry of that text, with the plugin
+// root for ${CLAUDE_PLUGIN_ROOT}, or the hash Codex reports is of other text.
+function isPinned(hook, pin) {
+  const unix = (path) => path.replaceAll("\\", "/");
+  if (!unix(hook.sourcePath).endsWith(`/${pin.path}`)) return false;
+  const text = readRegularFile(hook.sourcePath);
+  if (text === null || hookDigest(text) !== pin.sha256) return false;
+  const root = hook.sourcePath.slice(0, -pin.path.length - 1);
+  const entries = Object.entries(JSON.parse(text).hooks).flatMap(([event, groups]) =>
+    groups.flatMap((group) => group.hooks.map((entry) => ({ event, matcher: group.matcher ?? null, entry }))),
+  );
+  const expand = (line) => unix(line.replaceAll("${CLAUDE_PLUGIN_ROOT}", root));
+  return entries.some(
+    ({ event, matcher, entry }) =>
+      event[0].toLowerCase() + event.slice(1) === hook.eventName &&
+      matcher === hook.matcher &&
+      [entry.command, entry.commandWindows].some((line) => line !== undefined && expand(line) === unix(hook.command)),
+  );
+}
 
 // Why `codex plugin add` runs: a first install, an update, a cache with
 // missing files, or a disabled plugin, since Codex has no enable command.
@@ -187,13 +218,21 @@ export async function installCodex(home, { source, trusted, version, skills, cod
       }[step],
     );
   }
-  steps.push(...(await withServer(home, (server) => trustHooks(server, codexHook))));
+  steps.push(...(await withServer(home, (server) => trustHooks(server, trusted, codexHook))));
   return steps;
 }
 
-// `upsert`: `replace` would drop the user's other trusted hooks. An entry
-// from any other hooks file stays untrusted, and doctor names it.
-async function trustHooks(server, pin) {
+// One app-server session checks the marketplace source, lists the hooks, and
+// writes the trust. The write names the config version the source check read,
+// so Codex refuses it when config.toml changed in between. A config write
+// also makes Codex read the hooks files again, so the listing after it shows
+// a hooks file that changed since the check, and then the trust is taken
+// back. `upsert`: `replace` would drop the user's other trusted hooks. An
+// entry from any other hooks file stays untrusted, and doctor names it.
+async function trustHooks(server, trusted, pin) {
+  const { config, layers } = await server.request("config/read", { includeLayers: true });
+  if (!marketplaceCheck(marketplaceSources(config), trusted).ok) return [];
+  const user = layers.find((layer) => layer.name.type === "user");
   const pending = (await pluginHooks(server)).filter(
     (h) => (h.trustStatus === "untrusted" || h.trustStatus === "modified") && isPinned(h, pin),
   );
@@ -202,10 +241,17 @@ async function trustHooks(server, pin) {
     keyPath: "hooks.state",
     mergeStrategy: "upsert",
     value: Object.fromEntries(pending.map((h) => [h.key, { trusted_hash: h.currentHash }])),
+    expectedVersion: user.version,
   });
-  const after = new Map((await pluginHooks(server)).map((h) => [h.key, h.trustStatus]));
-  const failed = pending.filter((h) => after.get(h.key) !== "trusted");
-  if (failed.length) throw new Error(`Codex still reports ${failed.map((h) => `${h.key} ${after.get(h.key)}`).join(", ")} after the trust write`);
+  const listed = new Map((await pluginHooks(server)).map((h) => [h.key, h]));
+  const now = (h) => listed.get(h.key) ?? {};
+  const same = (h) => now(h).command === h.command && now(h).currentHash === h.currentHash;
+  const failed = pending.filter((h) => now(h).trustStatus !== "trusted" || !same(h));
+  if (failed.length) {
+    await server.request("config/value/write", { keyPath: "hooks.state", mergeStrategy: "replace", value: user.config.hooks?.state ?? null });
+    const status = (h) => `${h.key} ${now(h).trustStatus ?? "unlisted"}${same(h) ? "" : " with another entry"}`;
+    throw new Error(`Codex lists ${failed.map(status).join(", ")} after the trust write, so the installer took that trust back`);
+  }
   return pending.map((h) => `trusted hook ${h.key} (was ${h.trustStatus})`);
 }
 
