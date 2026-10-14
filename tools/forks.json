@@ -1,5 +1,29 @@
 {
   "pstack": {
+    "plugins/pstack/skills/poteto-mode/SKILL.md": {
+      "kind": "policy",
+      "why": "Carries four rules from Michael Denyer's pstack-claude in T3 wording: load a managed platform's skill before deploying, stop an abandoned agent with task_cancel and confirm with task_status that it stopped, keep a review gate closed while no independent reviewer can run, and keep the todolist in .audit/<task-slug>.todo.md when the session has no task tool.",
+      "since": "2.0.0-rc.2",
+      "upstream": "not-proposed"
+    },
+    "plugins/pstack/skills/poteto-mode/playbooks/feature.md": {
+      "kind": "policy",
+      "why": "Carries the rule from Michael Denyer's pstack-claude that every file-writing delegate gets its own worktree from HEAD and that no one writes or runs a suite in a worktree a delegate still holds.",
+      "since": "2.0.0-rc.2",
+      "upstream": "not-proposed"
+    },
+    "plugins/pstack/skills/poteto-mode/playbooks/opening-a-pr.md": {
+      "kind": "policy",
+      "why": "Carries the rule from Michael Denyer's pstack-claude that every live agent holding a worktree is stopped, and the stop confirmed, before a commit, merge, or deploy from it.",
+      "since": "2.0.0-rc.2",
+      "upstream": "not-proposed"
+    },
+    "plugins/pstack/skills/poteto-mode/playbooks/shipping.md": {
+      "kind": "policy",
+      "why": "Adds --match-head-commit <verified-head> to the GitHub merge in step 4, the head guard from Michael Denyer's pstack-claude, so a head pushed after verification cannot land.",
+      "since": "2.0.0-rc.2",
+      "upstream": "not-proposed"
+    },
     "plugins/pstack/skills/poteto-mode/scripts/watch-pr/cli.test.ts": {
       "kind": "port-feature",
       "why": "Expects the --settle default that cli.ts adds.",
