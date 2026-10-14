@@ -6,21 +6,19 @@ The skill text is Lauren's. A generated set of substitutions rewrites only what 
 
 t3-pstack works only inside T3.
 
-## Install
-
-| | Claude Code | Codex |
-| --- | --- | --- |
-| Plugin id | `t3-pstack@t3-pstack` | `t3-pstack@t3-pstack` |
-| Marketplace repo | `chhoumann/t3-pstack` | `chhoumann/t3-pstack` |
+## Install, update, and check
 
 ```shell
-claude plugin marketplace add chhoumann/t3-pstack && claude plugin install t3-pstack@t3-pstack
-codex plugin marketplace add chhoumann/t3-pstack && codex plugin add t3-pstack@t3-pstack
+npx -y github:chhoumann/t3-pstack install
+npx -y github:chhoumann/t3-pstack update
+npx -y github:chhoumann/t3-pstack doctor
 ```
 
-Codex runs a plugin's session-start hook only after you trust it, through `/hooks` in the Codex CLI.
+`install` and `update` are the same command, and a second run changes nothing. With Node 20 or later, it installs or updates the `t3-pstack@t3-pstack` plugin in every Claude Code and Codex config home T3 can run: `~/.claude` and `~/.codex`, `$CLAUDE_CONFIG_DIR` and `$CODEX_HOME`, and the home of each `claudeAgent` and `codex` instance in T3's settings, disabled ones included. Name any other home with `--claude-home <dir>` or `--codex-home <dir>`. On Codex it also trusts t3-pstack's session-start hook. Codex runs a plugin's hook only once it is trusted, and T3's Codex sessions never ask, so without this step the hook never runs. Run `update` after each release.
 
-Then run `/t3-pstack:setup-pstack` in a T3 thread on each machine. It writes `t3-pstack-models.md` in the host's config directory, with one T3 target per role (`<providerInstanceId>/<modelId>` plus that provider's options), and checks it against the machine's `orchestrator_capabilities`. Without a sheet, every role runs on the defaults in its skill's Models section.
+`doctor` reports on the same homes and changes nothing itself: the installed version and whether it is enabled, the Codex hook's trust, Claude Code records that pin an old version, plain copies of the plugin's skills, and the model sheet. It exits 1 on any problem and prints a fix for each.
+
+Then run `/t3-pstack:setup-pstack` in a T3 thread on each machine. It writes the model sheet, `~/.config/t3-pstack/models.md`, with one T3 target per role (`<providerInstanceId>/<modelId>` plus that provider's options), and checks it against the machine's `orchestrator_capabilities`. Without a sheet, every role runs on the defaults in its skill's Models section.
 
 ## Use
 
