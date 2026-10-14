@@ -1,5 +1,6 @@
 // Each runtime's shipped SessionStart command, run for real: the mandate is
-// injected unless that runtime's model sheet turns it off.
+// injected unless the model sheet turns it off. The sheet is the machine's,
+// or, until the installer moves it there, that runtime's home sheet.
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -112,7 +113,44 @@ describe("SessionStart hook", () => {
   }
 });
 
-describe("each host reads only its own sheet", () => {
+describe("the machine sheet", () => {
+  const run = (runtime, home, env = {}) =>
+    spawnSync("sh", ["-c", sessionStart[runtime].hooks[0].command], {
+      env: { PATH: process.env.PATH, HOME: home, CLAUDE_PLUGIN_ROOT: pluginRoot, ...env },
+      encoding: "utf8",
+    }).stdout;
+
+  test.each(["claude", "codex"])("decides over the %s home sheet", (runtime) => {
+    const home = mkdtempSync(join(tmpdir(), "pstack-hook-"));
+    try {
+      const machineSheet = join(home, ".config/t3-pstack/models.md");
+      mkdirSync(join(home, ".config/t3-pstack"), { recursive: true });
+      mkdirSync(join(home, `.${runtime}`));
+      writeFileSync(machineSheet, "session hook: off\n");
+      writeFileSync(join(home, `.${runtime}`, "t3-pstack-models.md"), "session hook: on\n");
+      expect(run(runtime, home)).toBe("");
+      writeFileSync(machineSheet, "session hook: on\n");
+      writeFileSync(join(home, `.${runtime}`, "t3-pstack-models.md"), "session hook: off\n");
+      expect(run(runtime, home)).toBe(mandate);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test.each(["claude", "codex"])("moves with XDG_CONFIG_HOME on %s", (runtime) => {
+    const home = mkdtempSync(join(tmpdir(), "pstack-hook-"));
+    try {
+      mkdirSync(join(home, "xdg/t3-pstack"), { recursive: true });
+      writeFileSync(join(home, "xdg/t3-pstack/models.md"), "session hook: off\n");
+      expect(run(runtime, home)).toBe(mandate);
+      expect(run(runtime, home, { XDG_CONFIG_HOME: join(home, "xdg") })).toBe("");
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("without a machine sheet, each host reads only its own home sheet", () => {
   test("an off sheet in the other host's config directory leaves injection on", () => {
     const home = mkdtempSync(join(tmpdir(), "pstack-hook-"));
     try {

@@ -5,7 +5,7 @@ description: Configure which T3 provider and model pstack uses per role and at w
 
 # Setup pstack
 
-Write the model sheet, `t3-pstack-models.md` in the host's config directory (`$CLAUDE_CONFIG_DIR` or `~/.claude` on Claude Code, `$CODEX_HOME` or `~/.codex` on Codex). It sets pstack's T3 provider and model per role, and every pstack skill reads it before it dispatches.
+Write the model sheet, `~/.config/t3-pstack/models.md` (`$XDG_CONFIG_HOME/t3-pstack/models.md` when that is set), one per machine. It sets pstack's T3 provider and model per role, and every pstack skill reads it before it dispatches.
 
 ## Steps
 
@@ -15,7 +15,7 @@ Call `orchestrator_capabilities`, or `acp-mcp-call orchestrator_capabilities '{}
 
 ### 2. Load current state
 
-The default role-to-target mapping is the sheet shape in step 5 below. If the sheet already exists, read it and treat its `# budget` line and its role values as the current choices. Otherwise start from those defaults. A line whose role is not in step 5, such as `how critics`, is from a retired role. Drop it. Carry a `strongest judgment` value over to `hardest tasks`, its new name. Also drop any value that is not a T3 entry, such as a bare family name, a `claude-` slug, or an `@<level>` suffix, and a `default effort` line.
+The default role-to-target mapping is the sheet shape in step 5 below. If the sheet already exists, read it and treat its `# budget` line and its role values as the current choices. If it does not, read `t3-pstack-models.md` in the host's config directory (`$CLAUDE_CONFIG_DIR` or `~/.claude` on Claude Code, `$CODEX_HOME` or `~/.codex` on Codex), where releases before 2.0.0-rc.3 kept the sheet, the same way. Otherwise start from those defaults. A line whose role is not in step 5, such as `how critics`, is from a retired role. Drop it. Carry a `strongest judgment` value over to `hardest tasks`, its new name. Also drop any value that is not a T3 entry, such as a bare family name, a `claude-` slug, or an `@<level>` suffix, and a `default effort` line.
 
 ### 3. Budget, map, and confirm
 
@@ -38,7 +38,7 @@ Write the candidate to a temp file. Call `orchestrator_capabilities` again and s
 
 ### 5. Write the sheet
 
-Overwrite the sheet with the candidate, writing through any symlink at its path (resolve it with `realpath`). One sheet serves both hosts, so link the other host's sheet path to it with `ln -s`. If a different file is already there, run the checker on it and ask before you replace it. Overwrite the whole file so re-runs stay idempotent. On Codex, remove any pstack model rows an earlier setup pasted into `<codex-home>/AGENTS.md`. With every default kept, the sheet reads:
+Overwrite the sheet with the candidate, creating its directory and writing through any symlink at its path (resolve it with `realpath`). If a different file is already there, run the checker on it and ask before you replace it. Overwrite the whole file so re-runs stay idempotent. Then replace `t3-pstack-models.md` in the host's config directory with a link to the sheet (`ln -sf`), so an older t3-pstack reads the same sheet. Step 2 already read what it held. On Codex, remove any pstack model rows an earlier setup pasted into `<codex-home>/AGENTS.md`. With every default kept, the sheet reads:
 
 ```markdown
 # pstack model configuration (T3). One line per role. Delete a line to fall back to the skill default.
