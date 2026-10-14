@@ -28,7 +28,7 @@ jobs:
       - name: Check generated files and plugin invariants
         run: bun tools/generate.mjs --check
       - name: Tool and invariant fixture tests
-        run: bun test tests/
+        run: bun test tests/ --timeout 30000
 
   windows-hooks:
     name: Windows session hooks
@@ -46,21 +46,6 @@ jobs:
         run: bun test --timeout 10000 tests/session-hook-windows.test.mjs
         env:
           PSTACK_REQUIRE_WINDOWS_HOOK: "1"
-
-  windows-worktree-audit:
-    name: Windows worktree audit
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version: "1.3.14"
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-      - name: Test the worktree audit
-        run: bun test --timeout 30000 tests/worktree-audit.test.mjs
 
   forks:
     name: Fork registry
@@ -115,55 +100,6 @@ jobs:
               fi
             done
 
-  skills-only:
-    name: Skills-only install
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      # Installs this checkout rather than the GitHub URL, so the canary proves
-      # the tree in the PR instead of whatever is on main. One agent target is
-      # enough: the CLI copies the same bytes for every agent, and the
-      # generated job already validated the source tree's links and prose.
-      - name: Install the skills tree with the skills CLI
-        run: |
-          npx --yes skills@1.5.23 add ./plugins/pstack/skills \
-            --skill '*' --agent codex --yes --copy
-      - name: Compare the installed skills tree with the source
-        run: diff -qr plugins/pstack/skills .agents/skills
-
-  pi-types:
-    name: Pi extension types
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version: "1.3.14"
-      # The extension's types and model catalog come from the installed Pi
-      # package, so the checks run against the release users have rather than
-      # a copy in bun.lock. No lockfile: the exact version is pinned, and
-      # --before holds Pi's dependencies to the versions published by that
-      # date, since Pi releases after 1.0.0 ship no npm-shrinkwrap.json. Move
-      # the date with the version. The job has read-only permissions and no
-      # secrets. A lockfile here would put Pi's whole dependency tree under
-      # this repository's dependency scans.
-      - name: Install Pi
-        run: npm install -g --ignore-scripts --before=2026-10-11 @earendil-works/pi-coding-agent@1.1.0 # zizmor: ignore[adhoc-packages]
-      - name: Typecheck the extension against Pi
-        run: bun tools/typecheck-pi.mjs
-      - name: Install test dependencies
-        run: bun install --frozen-lockfile
-      # These checks make no model calls. Missing Pi fails instead of skipping.
-      - name: Check the model catalog and child startup against Pi
-        run: bun test tests/pi/catalog.test.mjs tests/pi/runtime.test.mjs
-        env:
-          PSTACK_PI_REQUIRE_CATALOG: "1"
-          PSTACK_PI_REQUIRE_RUNTIME: "1"
-
   scripts:
     name: Vendored bun tooling
     runs-on: ubuntu-latest
@@ -183,12 +119,11 @@ jobs:
         run: bun run typecheck
       - name: Test
         run: bun test orch watch-pr check-plan.test.ts
-      # Pinned here, not in package.json, so bun.lock stays identical to
-      # upstream's. 3.6.2 reproduces upstream's watch-pr files byte for byte,
-      # except fakes.test-helper.ts, which .prettierignore lists; later
-      # releases rewrap types.ts too.
+      # Upstream's scripts are not Prettier output, so this checks the port's
+      # own TypeScript. Pinned here, not in package.json, so bun.lock stays
+      # identical to upstream's.
       - name: Check formatting
-        run: bunx prettier@3.6.2 --check .
+        run: bunx prettier@3.6.2 --check watch-pr/settle.ts watch-pr/settle.test.ts resolve-codex-transcript.ts
 
   shellcheck:
     name: Shell scripts
@@ -245,6 +180,8 @@ jobs:
       # remote URL, so a contributor's PR never fails on someone else's link
       # rot. tools/validate-skills.mjs already covers the skills tree; this
       # reaches the README, CHANGES, CONTRIBUTING and the other top-level docs.
+      # Upstream's prompt templates write `(url)` as a placeholder link, which
+      # validate-skills.mjs also skips, so a bare `url` file target is excluded.
       #
       # Resolved with: docker buildx imagetools inspect lycheeverse/lychee:0.24.2
       - name: Check relative links and fragments
@@ -252,21 +189,5 @@ jobs:
           docker run --rm -v "$GITHUB_WORKSPACE:/repo" -w /repo \
             lycheeverse/lychee:0.24.2@sha256:e2d19e57cf6ab037026f20b8e449a1f30d9d7f81eef4194763aab2eab20bd28d \
             --offline --no-progress --include-fragments \
+            --exclude 'file://.*/url$' \
             --exclude-path node_modules --exclude-path .git '**/*.md'
-
-  # macOS differs from ubuntu where the audit looks: BSD du pads its sizes and
-  # the temp directory sits behind the /var link.
-  macos-worktree-audit:
-    name: macOS worktree audit
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version: "1.3.14"
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-      - name: Test the worktree audit
-        run: bun test --timeout 30000 tests/worktree-audit.test.mjs

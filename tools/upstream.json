@@ -4,7 +4,7 @@
     "pstack": {
       "upstreamPath": "pstack",
       "localPath": "plugins/pstack",
-      "sha": "997ffc7",
+      "sha": "ce649c03ac3b75b6ae80cbd15b7e2c536caedb5a",
       "exclude": [
         ".cursor-plugin/",
         ".gitignore",
@@ -14,14 +14,13 @@
         "automations/",
         "docs/",
         "plugin.json",
-        "skills/make-bot-ui/",
-        "skills/poteto-mode/scripts/worktree-audit.sh"
+        "skills/make-bot-ui/"
       ]
     },
     "cursor-team-kit": {
       "upstreamPath": "cursor-team-kit/skills",
       "localPath": "plugins/pstack/skills",
-      "sha": "e46364b8be46000b7df0f260550cd712afbb8d36",
+      "sha": "ce649c03ac3b75b6ae80cbd15b7e2c536caedb5a",
       "exclude": [
         "check-compiler-errors/",
         "control-cli/",
@@ -40,7 +39,7 @@
     "thermos": {
       "upstreamPath": "thermos",
       "localPath": "plugins/pstack",
-      "sha": "118e73b0e196e4d49d5aade7ce6dd8985a621f68",
+      "sha": "ce649c03ac3b75b6ae80cbd15b7e2c536caedb5a",
       "exclude": [
         ".cursor-plugin/",
         "CHANGELOG.md",

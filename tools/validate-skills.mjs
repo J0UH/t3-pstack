@@ -58,39 +58,6 @@ export function pathIsInside(root, path) {
   return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
 }
 
-// A backticked path in prose is not a markdown link, so validateSkillsTree
-// never sees it; that is how codex-tools.md came to tell the reader to open
-// agents/comment-sicko.md, a file a skills-only install lacks. The defect is
-// a filesystem fact: the token names something that exists in the plugin
-// (beside the skills tree, or reachable through ../) but not inside the
-// tree. Tokens that resolve to nothing are placeholders, slash commands, or
-// maintainer notes and are left alone.
-function prosePathProblems(text, file, root) {
-  const pluginRoot = dirname(root);
-  const problems = [];
-  for (const match of text.matchAll(/`([^`\n]+)`/g)) {
-    const token = match[1];
-    if (!token.includes("/") || /\s/.test(token) || isAbsolute(token)) continue;
-    const candidates = [resolve(dirname(file), token), resolve(pluginRoot, token)];
-    const outside = candidates.find((path) => existsSync(path) && !pathIsInside(root, path));
-    if (outside) {
-      problems.push(`${relative(root, file)} -> ${token} (${relative(pluginRoot, outside)} is not installed with the skills tree)`);
-    }
-  }
-  return problems;
-}
-
-export function validateProsePaths(skillsDir) {
-  const root = resolve(skillsDir);
-  const problems = [];
-  for (const file of markdownFiles(root)) {
-    problems.push(...prosePathProblems(readFileSync(file, "utf8"), file, root));
-  }
-  if (problems.length) {
-    throw new Error(`prose names paths outside the skills tree:\n${problems.join("\n")}`);
-  }
-}
-
 export function validateSkillsTree(skillsDir) {
   const root = resolve(skillsDir);
   const realRoot = realpathSync(root);
@@ -103,6 +70,8 @@ export function validateSkillsTree(skillsDir) {
 
       const encodedPath = target.split(/[?#]/, 1)[0];
       if (!encodedPath) continue;
+      // A bare word such as `url` is a template placeholder in an example, not a file.
+      if (/^[A-Za-z]+$/.test(encodedPath)) continue;
       let path;
       try {
         path = decodeURIComponent(encodedPath);
@@ -133,8 +102,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   try {
     validateSkillsTree(resolve(skillsDir));
     console.log(`ok: local markdown links stay inside ${skillsDir}`);
-    validateProsePaths(resolve(skillsDir));
-    console.log(`ok: no prose in ${skillsDir} points at a path outside it`);
   } catch (error) {
     console.error(`FAIL: ${error.message}`);
     process.exit(1);

@@ -300,12 +300,12 @@ describe("find-transcript", () => {
   // Step 1's command exactly as reflect/SKILL.md gives it, with its placeholders
   // filled in and the plugin installed under a path with a space.
   function skillCommand(dir, encodedCwd, fragment) {
-    const command = skill.match(/^```bash\n(node "<plugin>\/skills\/reflect\/scripts\/find-transcript\.mjs" .*)$/m)?.[1];
+    const command = skill.match(/^```bash\n(node "<plugin root>\/skills\/reflect\/scripts\/find-transcript\.mjs" .*)$/m)?.[1];
     if (command === undefined) throw new Error("reflect/SKILL.md has no find-transcript command");
     const plugin = join(dir, "plugin install");
     symlinkSync(join(import.meta.dir, "../plugins/pstack"), plugin);
     return command
-      .replace("<plugin>", plugin)
+      .replace("<plugin root>", plugin)
       .replace("<encoded-cwd>", encodedCwd)
       .replace("<opening prompt fragment>", fragment);
   }

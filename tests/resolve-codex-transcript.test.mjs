@@ -22,7 +22,7 @@ import { dirname, join, relative } from "node:path";
 const SCRIPTS = join(import.meta.dir, "../plugins/pstack/skills/poteto-mode/scripts");
 const RESOLVER = join(SCRIPTS, "resolve-codex-transcript.ts");
 const LAUNCHER = join(SCRIPTS, "resolve-codex-transcript");
-const MAPPING = readFileSync(join(import.meta.dir, "../plugins/pstack/skills/poteto-mode/references/codex-tools.md"), "utf8");
+const REFLECT = readFileSync(join(import.meta.dir, "../plugins/pstack/skills/reflect/SKILL.md"), "utf8");
 const CHAT = "00000000-1111-2222-3333-444444444444";
 const OTHER = "00000000-1111-2222-3333-555555555555";
 const OPENING = "Reflect on this synthetic request.";
@@ -380,13 +380,13 @@ describe("resolve-codex-transcript", () => {
     expect(launched.exitCode).toBe(0);
   });
 
-  it("runs as codex-tools.md gives the command, from a plugin path with a space", () => {
-    const command = MAPPING.match(/^("<plugin>\/skills\/poteto-mode\/scripts\/resolve-codex-transcript" .*)$/m)?.[1];
-    if (command === undefined) throw new Error("codex-tools.md has no resolver command");
+  it("runs as reflect's step 1 gives the command, from a plugin path with a space", () => {
+    const command = REFLECT.match(/^("<plugin root>\/skills\/poteto-mode\/scripts\/resolve-codex-transcript" .*)$/m)?.[1];
+    if (command === undefined) throw new Error("reflect/SKILL.md has no resolver command");
     const plugin = join(root, "plugin install");
     symlinkSync(join(import.meta.dir, "../plugins/pstack"), plugin);
     const env = { PATH: process.env.PATH, HOME: root, CODEX_HOME: home, CODEX_THREAD_ID: CHAT };
-    const launched = Bun.spawnSync(["sh", "-c", command.replace("<plugin>", plugin)], { env });
+    const launched = Bun.spawnSync(["sh", "-c", command.replace("<plugin root>", plugin)], { env });
     expect(launched.stderr.toString()).toBe("");
     expect(JSON.parse(launched.stdout.toString())).toMatchObject({ status: "resolved", path: rollout });
     expect(launched.exitCode).toBe(0);

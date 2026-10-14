@@ -1,15 +1,15 @@
 #!/usr/bin/env bun
 // Sync this port forward to a new upstream SHA.
 //
-//   bun tools/sync.mjs <component> <new-sha> [--dry-run]
+//   bun tools/sync.mjs <component> <new-sha> [--dry-run] [--bootstrap] [--clone <dir>]
 //
 // Reads tools/upstream.json (remote, per-component pin, and the `exclude`
 // list of upstream paths the port deliberately does not carry) and
-// tools/substitutions.json (mechanical Cursor->Claude rewrites plus a denylist
-// of Cursor-isms that need a human sentence, not a token swap), and
-// tools/forks.json (each path the port forks on purpose). Each upstream
-// file is derived into its port form (substitutions, then the port's own
-// frontmatter and generator stamps via deriveSkill) and compared three ways:
+// tools/substitutions.json (the rewrites that put upstream's Cursor text into
+// its T3 form, plus a denylist of Cursor terms that need a human sentence, not
+// a token swap), and tools/forks.json (each path the port forks on purpose).
+// Each upstream file is derived into its port form (substitutions, then the
+// port's frontmatter and stamped regions via deriveT3) and compared three ways:
 //
 //   - local copy is missing -> new file, written
 //   - local copy matches the derived NEW text and mode -> unchanged
@@ -53,6 +53,18 @@
 // as <new-sha> under --dry-run prints the ownership map. At the pin an upstream
 // file the port lacks fails the run, since a sync to a new SHA would write it
 // back.
+//
+// Every substitution must still match somewhere in the derived trees, this
+// component's at <new-sha> and every other component's at its pin. A rule
+// that matches nothing has lost the T3 text it carried, which the denylist
+// cannot see when upstream rewords the sentence it anchored on, so the run
+// fails naming it.
+//
+// --bootstrap regenerates the component from upstream at <new-sha> without a
+// three-way merge: every carried file is written in its derived form, except a
+// declared fork, which keeps the port's copy. Port files upstream does not carry
+// are left in place and listed. --clone reads upstream from a local clone
+// instead of cloning the remote.
 
 import { execFileSync, spawnSync } from "node:child_process";
 import {
@@ -70,7 +82,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { deriveSkill, loadLeadLines, loadModels } from "./generate.mjs";
+import { deriveT3 } from "./derive-t3.mjs";
+import { loadModels } from "./generate.mjs";
 import { walk } from "./validate-skills.mjs";
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -146,7 +159,7 @@ export function parseForks(registry, components) {
         if (missing.length) fail(`missing field ${missing.map((f) => `"${f}"`).join(", ")}`);
         if (!FORK_KINDS.has(entry.kind)) fail(`unknown kind "${entry.kind}"; use port-feature or policy`);
         if (typeof entry.why !== "string" || !entry.why.trim()) fail("why must be a sentence");
-        if (!/^\d+\.\d+\.\d+$/.test(entry.since)) fail(`since "${entry.since}" is not a version`);
+        if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?$/.test(entry.since)) fail(`since "${entry.since}" is not a version`);
         if (entry.upstream !== "not-proposed" && !UPSTREAM_LINK.test(entry.upstream)) {
           fail(`upstream "${entry.upstream}" is neither not-proposed nor a GitHub pull or issue URL`);
         }
@@ -482,6 +495,61 @@ export function syncComponent({
   return report;
 }
 
+// The rules that match nothing in any of `trees`, each a directory of upstream
+// files and the component's `exclude` list. Rule `files` scopes match the
+// upstream-relative path, as in syncComponent.
+export function unusedRules(rules, trees) {
+  const used = new Set();
+  for (const { dir, exclude = [] } of trees) {
+    for (const file of walk(dir)) {
+      const rel = relative(dir, file);
+      if (isExcluded(rel, exclude) || lstatSync(file).isSymbolicLink()) continue;
+      const raw = readFileSync(file);
+      if (isBinary(rel, raw)) continue;
+      for (const key of applySubstitutions(raw.toString("utf8"), rules, rel).counts.keys()) used.add(key);
+    }
+  }
+  return rules.filter((rule) => !used.has(rule.key)).map((rule) => rule.key);
+}
+
+// Regenerate one component from upstream at a SHA: every carried file in its
+// derived form, except a declared fork that the port already holds. Returns
+// the files it writes, the forks it keeps, and denylist hits, which block
+// every write, as does a symlink on either side.
+export function bootstrapComponent({ newDir, localDir, rules, denylist = [], exclude = [], derive = (_, t) => t, forks = new Map(), dryRun = false }) {
+  const report = { written: [], kept: [], symlinks: [], hits: [] };
+  const writes = [];
+  for (const file of walk(newDir)) {
+    const rel = relative(newDir, file);
+    if (isExcluded(rel, exclude)) continue;
+    const local = lstatSync(join(localDir, rel), { throwIfNoEntry: false });
+    if (lstatSync(file).isSymbolicLink() || local?.isSymbolicLink()) {
+      report.symlinks.push(rel);
+      continue;
+    }
+    if (forks.has(rel) && local) {
+      report.kept.push(rel);
+      const bytes = readFileSync(join(localDir, rel));
+      if (!isBinary(rel, bytes)) report.hits.push(...denylistHits(rel, bytes.toString("utf8"), denylist));
+      continue;
+    }
+    const raw = readFileSync(file);
+    const binary = isBinary(rel, raw);
+    const bytes = binary ? raw : Buffer.from(derive(rel, applySubstitutions(raw.toString("utf8"), rules, rel).text));
+    if (!binary) report.hits.push(...denylistHits(rel, bytes.toString("utf8"), denylist));
+    writes.push({ rel, bytes, mode: gitMode(lstatSync(file).mode) });
+    report.written.push(rel);
+  }
+  if (dryRun || report.hits.length || report.symlinks.length) return report;
+  for (const { rel, bytes, mode } of writes) {
+    const localFile = join(localDir, rel);
+    mkdirSync(dirname(localFile), { recursive: true });
+    writeFileSync(localFile, bytes);
+    chmodSync(localFile, mode);
+  }
+  return report;
+}
+
 function git(args) {
   return execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] });
 }
@@ -502,16 +570,23 @@ function pathsOtherComponentsCarry(clone, components, component) {
     );
 }
 
+const FLAGS = ["--dry-run", "--bootstrap"];
+
 function main() {
   const args = process.argv.slice(2);
   const dryRun = args.includes("--dry-run");
-  const [component, newSha, ...stray] = args.filter((a) => a !== "--dry-run");
+  const bootstrap = args.includes("--bootstrap");
+  const cloneAt = args.indexOf("--clone");
+  const localClone = cloneAt === -1 ? null : args.splice(cloneAt, 2)[1];
+  const [component, newSha, ...stray] = args.filter((a) => !FLAGS.includes(a));
   const upstreamPath = join(repo, "tools/upstream.json");
   const upstream = JSON.parse(readFileSync(upstreamPath, "utf8"));
   const spec = upstream.components[component];
-  if (stray.length || !spec || !newSha?.match(/^[0-9a-f]{7,40}$/)) {
+  if (stray.length || !spec || !newSha?.match(/^[0-9a-f]{7,40}$/) || (cloneAt !== -1 && !localClone)) {
     for (const arg of stray) console.error(`unexpected argument: ${JSON.stringify(arg)}`);
-    console.error(`usage: bun tools/sync.mjs <${Object.keys(upstream.components).join("|")}> <new-sha> [--dry-run]`);
+    console.error(
+      `usage: bun tools/sync.mjs <${Object.keys(upstream.components).join("|")}> <new-sha> [--dry-run] [--bootstrap] [--clone <dir>]`,
+    );
     process.exit(2);
   }
   const { substitutions, denylist } = parseSubstitutions(
@@ -521,18 +596,58 @@ function main() {
     parseForks(JSON.parse(readFileSync(join(repo, "tools/forks.json"), "utf8")), upstream.components)[component] ??
     new Map();
   const models = loadModels(repo);
-  const leads = loadLeadLines(repo);
+  const derive = (rel, text) => deriveT3(join(spec.localPath, rel), text, models);
 
   const scratch = mkdtempSync(join(tmpdir(), "pstack-sync-"));
   try {
-    console.log(`cloning ${upstream.remote} ...`);
-    git(["clone", "--filter=blob:none", upstream.remote, join(scratch, "clone")]);
-    const co = (sha, dest) => {
+    console.log(`cloning ${localClone ?? upstream.remote} ...`);
+    git(["clone", ...(localClone ? ["--shared"] : ["--filter=blob:none"]), localClone ?? upstream.remote, join(scratch, "clone")]);
+    const co = (sha, dest, path = spec.upstreamPath) => {
       git(["-C", join(scratch, "clone"), "worktree", "add", "--detach", dest, sha]);
-      return join(dest, spec.upstreamPath);
+      return join(dest, path);
     };
-    const oldDir = co(spec.sha, join(scratch, "old"));
     const newDir = co(newSha, join(scratch, "new"));
+    const others = Object.entries(upstream.components)
+      .filter(([name]) => name !== component)
+      .map(([name, other]) => ({ dir: co(other.sha, join(scratch, `pin-${name}`), other.upstreamPath), exclude: other.exclude }));
+    const unused = unusedRules(substitutions, [{ dir: newDir, exclude: spec.exclude }, ...others]);
+    if (unused.length) {
+      console.error(`\nFAIL: substitutions that match nothing upstream; update each to upstream's new text or delete it, then rerun:`);
+      for (const key of unused) console.error(`  ${JSON.stringify(key).slice(0, 160)}`);
+      process.exitCode = 1;
+    }
+
+    if (bootstrap) {
+      const report = bootstrapComponent({
+        newDir,
+        localDir: join(repo, spec.localPath),
+        rules: substitutions,
+        denylist,
+        exclude: spec.exclude ?? [],
+        derive,
+        forks,
+        dryRun: dryRun || unused.length > 0,
+      });
+      console.log(`\n${dryRun ? "dry run; " : ""}bootstrap from ${newSha}: ${report.written.length} derived, ${report.kept.length} forks kept`);
+      for (const rel of report.kept) console.log(`  fork kept: ${spec.localPath}/${rel}`);
+      for (const rel of report.symlinks) console.error(`FAIL: symlink at ${spec.localPath}/${rel}; the sync never follows or writes one`);
+      if (report.hits.length) {
+        console.error(`\nFAIL: Cursor terms in derived files; add a substitution or rewrite by hand, then rerun:`);
+        for (const h of report.hits) console.error(`  ${spec.localPath}/${h}`);
+      }
+      if (report.hits.length || report.symlinks.length || unused.length) {
+        process.exitCode = 1;
+        return;
+      }
+      if (dryRun) return;
+      upstream.components[component].sha = newSha;
+      writeFileSync(upstreamPath, JSON.stringify(upstream, null, 2) + "\n");
+      console.log(`\npinned: ${component} -> ${newSha}`);
+      console.log(`next: run bun tools/sync.mjs ${component} ${newSha} --dry-run, which lists the port-only files to keep or delete`);
+      return;
+    }
+
+    const oldDir = co(spec.sha, join(scratch, "old"));
     const atPin = git(["-C", oldDir, "rev-parse", "HEAD"]) === git(["-C", newDir, "rev-parse", "HEAD"]);
 
     const report = syncComponent({
@@ -543,10 +658,10 @@ function main() {
       denylist,
       exclude: spec.exclude ?? [],
       carriedElsewhere: pathsOtherComponentsCarry(join(scratch, "clone"), upstream.components, component),
-      derive: (rel, text) => deriveSkill(join(spec.localPath, rel), text, models, leads),
+      derive,
       forks,
       atPin,
-      dryRun,
+      dryRun: dryRun || unused.length > 0,
     });
 
     console.log(`\n${dryRun ? "dry run; " : ""}unchanged: ${report.unchanged} files, excluded: ${report.excluded}`);
@@ -586,7 +701,7 @@ function main() {
       for (const { rel, reason } of report.collisions) console.error(`  ${spec.localPath}/${rel} (${reason})`);
     }
     if (report.hits.length) {
-      console.error(`\nFAIL: Cursor-isms in synced files; add a substitution or rewrite by hand, then rerun:`);
+      console.error(`\nFAIL: Cursor terms in synced files; add a substitution or rewrite by hand, then rerun:`);
       for (const h of report.hits) console.error(`  ${spec.localPath}/${h}`);
     }
     if (atPin && report.stale.length) {
@@ -605,7 +720,7 @@ function main() {
       console.error(`\nFAIL: forks with no entry under ${component} in tools/forks.json; declare each or restore upstream's form, then rerun:`);
       for (const rel of report.undeclared) console.error(`  ${spec.localPath}/${rel}`);
     }
-    if (report.binaryConflicts.length || report.collisions.length || report.hits.length || report.undeclared.length || (atPin && (report.stale.length || report.written.length))) {
+    if (unused.length || report.binaryConflicts.length || report.collisions.length || report.hits.length || report.undeclared.length || (atPin && (report.stale.length || report.written.length))) {
       process.exitCode = 1;
       return;
     }

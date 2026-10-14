@@ -9,15 +9,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { loadLeadLines, loadModels, noteSkills, parseModels, stampLeadLine } from "../tools/generate.mjs";
-import { RUNTIMES } from "../tools/runtimes.mjs";
+import { loadModels } from "../tools/generate.mjs";
 import { checkSheet, family, parseEntry, parseSheet } from "../plugins/pstack/skills/setup-pstack/scripts/t3-sheet.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const script = join(root, "plugins/pstack/skills/setup-pstack/scripts/t3-sheet.mjs");
 const catalogPath = join(root, "tests/fixtures/t3-catalog.json");
 const catalog = JSON.parse(readFileSync(catalogPath, "utf8"));
-const { roles, t3: defaults } = loadModels();
+const { roles, tiers: defaults } = loadModels();
 const check = (text, over = catalog) => checkSheet(parseSheet(text), { roles, defaults, catalog: over });
 const PANEL = "interrogate reviewers";
 
@@ -68,9 +67,9 @@ describe("parseEntry", () => {
 });
 
 describe("checkSheet against a catalog", () => {
-  test("the shipped default sheet dispatches", () => {
-    const mapping = readFileSync(join(root, "plugins/pstack/skills/poteto-mode/references/t3-tools.md"), "utf8");
-    const sheet = mapping.match(/```markdown\n(# pstack model configuration \(T3\)[\s\S]*?)```/)[1];
+  test("the default sheet setup-pstack writes dispatches", () => {
+    const setup = readFileSync(join(root, "plugins/pstack/skills/setup-pstack/SKILL.md"), "utf8");
+    const sheet = setup.match(/```markdown\n(# pstack model configuration \(T3\)[\s\S]*?)```/)[1];
     expect(parseSheet(sheet)).toHaveLength(roles.length + 1);
     expect(check(sheet)).toEqual([]);
   });
@@ -159,6 +158,16 @@ describe("checkSheet against a catalog", () => {
     expect(check("bug-fix: claudeAgent/claude-fable-5-1, grok/grok-4.7")).toEqual(["bug-fix: takes one entry, not a list"]);
   });
 
+  // Upstream renamed the role in 0.15.21. A sheet setup-pstack wrote before
+  // that keeps the old label, which still counts.
+  test("a strongest judgment line is checked as the hardest tasks role, and setting both fails", () => {
+    expect(check("strongest judgment: grok/grok-4.7 reasoningEffort=xhigh")).toEqual([]);
+    expect(check("strongest judgment: grok/grok-9")).toEqual(['strongest judgment: grok/grok-9: "grok" does not list model "grok-9"']);
+    expect(check("hardest tasks: grok/grok-4.7\nstrongest judgment: grok/grok-4.7")).toEqual([
+      '"strongest judgment" appears twice; only one line may set it',
+    ]);
+  });
+
   test("a role set twice fails rather than letting the last line win", () => {
     expect(check("swarm workers: grok/grok-4.7 effort=high\nswarm workers: grok/grok-4.7")).toEqual([
       'swarm workers: grok/grok-4.7: no option "effort" (has reasoningEffort)',
@@ -226,47 +235,6 @@ describe("t3-sheet.mjs CLI", () => {
   }, CLI_TIMEOUT);
 });
 
-describe("the models.json t3 block", () => {
-  const raw = JSON.parse(readFileSync(join(root, "plugins/pstack/models.json"), "utf8"));
-  const parse = (mutate) => {
-    const policy = structuredClone(raw);
-    mutate(policy);
-    return () => parseModels(policy, () => true);
-  };
-
-  test("a missing tier, a malformed target, and a one-family panel each throw", () => {
-    expect(parse((p) => delete p.t3.strongest)).toThrow('models.json: t3 has no target for tier "strongest"');
-    expect(parse((p) => (p.t3.default = "opus"))).toThrow('models.json: t3 "default": "opus" does not start with');
-    expect(parse((p) => (p.t3.default = "inherit-parent"))).toThrow('t3 "default" must name a target');
-    expect(parse((p) => (p.t3.default = ["grok/grok-4.7", "codex/gpt-6.1-sol"]))).toThrow('t3 "default" must be one target, not a list');
-    expect(parse((p) => p.t3.panel.push(p.t3.panel[0]))).toThrow('t3 "panel" lists');
-    expect(parse((p) => (p.t3.panel = [["grok/grok-4.7"], "codex/gpt-6.1-sol"]))).toThrow("is not one target written with single spaces");
-    expect(parse((p) => (p.t3.default = "grok/grok-4.7  reasoningEffort=high"))).toThrow("is not one target written with single spaces");
-    expect(parse((p) => (p.t3.panel = ["claudeAgent/claude-opus-5-5", "codex_pool/claude-opus-5-5"]))).toThrow(
-      "models.json: t3 panel needs at least two model families",
-    );
-  });
-});
-
-describe("the T3 preamble", () => {
-  const [codex, copilot, t3] = ["Codex", "GitHub Copilot", "T3"].map((name) => RUNTIMES.find((r) => r.name === name));
-
-  test("replaces another runtime's lead line instead of stacking under it", () => {
-    const text = `# Title\n\n${codex.preamble}\n\nBody.\n`;
-    expect(stampLeadLine(text, t3.preamble)).toBe(`# Title\n\n${t3.preamble}\n\nBody.\n`);
-  });
-
-  test("covers every skill the Codex table lists, so none keeps a Codex-only pointer", () => {
-    const listed = (runtime) => noteSkills(runtime, readFileSync(join(root, runtime.tools), "utf8"));
-    expect(listed(codex).filter((skill) => !listed(t3).includes(skill))).toEqual([]);
-  });
-
-  test("replaces the Codex preamble and keeps the Copilot one on a skill every table lists", () => {
-    expect(loadLeadLines().get("plugins/pstack/skills/arena/SKILL.md")).toEqual([copilot.preamble, t3.preamble]);
-    expect(loadLeadLines().get("plugins/pstack/skills/automate-me/SKILL.md")).toEqual([copilot.preamble, t3.preamble]);
-  });
-});
-
 describe("the T3 session-start context", () => {
   const pluginRoot = join(root, "plugins/pstack");
 
@@ -277,7 +245,7 @@ describe("the T3 session-start context", () => {
       env: { PATH: process.env.PATH, HOME: home, CLAUDE_PLUGIN_ROOT: pluginRoot, GIT_CONFIG_GLOBAL: "/dev/null" },
     });
     expect(result.status).toBe(0);
-    for (const phrase of ["t3-pstack:poteto-mode", "references/t3-tools.md", "t3-pstack-models.md", "delegate_task"]) {
+    for (const phrase of ["t3-pstack:poteto-mode", "t3-pstack-models.md", "delegate_task"]) {
       expect(result.stdout).toContain(phrase);
     }
   });

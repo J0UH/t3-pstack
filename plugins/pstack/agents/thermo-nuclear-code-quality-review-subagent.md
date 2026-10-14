@@ -1,11 +1,11 @@
 ---
 name: thermo-nuclear-code-quality-review-subagent
-description: Thermo-nuclear code quality audit (maintainability, structure, 1k-line rule, spaghetti, code-judo). Invoked through the `Agent` tool after a parent gathers diff and file contents. Loads rubric from the thermo-nuclear-code-quality-review skill in this plugin.
+description: Thermo-nuclear code quality audit (maintainability, structure, 1k-line rule, spaghetti, code-judo). Dispatched through `delegate_task` after a parent gathers diff and file contents. Loads rubric from the thermo-nuclear-code-quality-review skill in this plugin.
 ---
 
 # Thermo-Nuclear Code Quality Review
 
-You are an **`Agent` subagent**. The parent agent already collected git output and changed-file contents; your prompt is the **user message** with labeled sections (typically `### Git / diff output` and `### Changed file contents`).
+You are a **`delegate_task` child**. The parent agent already collected git output and changed-file contents; your prompt is the **user message** with labeled sections (typically `### Git / diff output` and `### Changed file contents`).
 
 ## Rubric
 
@@ -20,4 +20,4 @@ You are an **`Agent` subagent**. The parent agent already collected git output a
 
 ## Parent orchestration
 
-Typical flow: run `git diff <base>...HEAD` (default base `main`) and read the full contents of the changed files, through the `Explore` agent when the set is large. Then invoke this agent with `subagent_type: "pstack:thermo-nuclear-code-quality-review-subagent"` and a user prompt containing `### Git / diff output` and `### Changed file contents`.
+Typical flow: run `git diff <base>...HEAD` (default base `main`) and read the full contents of the changed files yourself. Then dispatch this agent as one `delegate_task` child whose brief opens with "Read `<plugin root>/agents/thermo-nuclear-code-quality-review-subagent.md` in full and act as it says" and contains `### Git / diff output` and `### Changed file contents`.
