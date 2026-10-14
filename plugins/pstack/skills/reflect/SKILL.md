@@ -12,31 +12,41 @@ Invoke when the user says "reflect" or "/reflect". Skip when the conversation is
 
 ## 1. Locate the active transcript
 
-Before fanning out, find this conversation's transcript in the `agent-transcripts/` directory the system prompt names. Do not glob across `~/.cursor/projects/*/`. That crosses workspace boundaries and reads private chats from unrelated projects.
+Before fanning out, find this conversation's own transcript where this thread's host keeps it. Do not search other projects' transcripts. That crosses workspace boundaries and reads private chats from unrelated projects.
+
+On Claude Code, run the finder with this session's ID, this project's transcripts directory, and a fragment of the conversation's opening user prompt:
 
 ```bash
-ls -t <agent-transcripts>/*.jsonl <agent-transcripts>/*/*.jsonl <agent-transcripts>/*/subagents/*.jsonl 2>/dev/null | head -10
+node "<plugin root>/skills/reflect/scripts/find-transcript.mjs" --session "$CLAUDE_CODE_SESSION_ID" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/<encoded-cwd>" "<opening prompt fragment>"
 ```
 
-That covers the legacy flat (`<id>.jsonl`), current nested (`<id>/<id>.jsonl`), and subagent (`<parent>/subagents/<child>.jsonl`) layouts. For each candidate, read the first JSONL line. Take the file whose `message.content[0].text` contains the conversation's opening user prompt. If none matches, pass a tight digest of the session instead.
+`<plugin root>` is the directory that holds this plugin's `skills/`, and `<encoded-cwd>` is the working directory with each `/` and `.` turned into `-`. With the session ID set, the finder prints this session's own transcript, and exits 1 when it does not exist, because a scan could return a sibling session that shares the opening prompt. Without it, the finder scans the flat, nested, and subagent layouts newest first and prints the first transcript whose opening typed prompt carries the fragment. Do not reimplement the scan by hand.
+
+On Codex, pass this thread's ID, which Codex exports as `CODEX_THREAD_ID`, to the resolver, and never search by chat title or time:
+
+```bash
+"<plugin root>/skills/poteto-mode/scripts/resolve-codex-transcript" "$CODEX_THREAD_ID"
+```
+
+On success it exits 0 and prints JSON whose `path` is the transcript. If either command exits non-zero, pass a tight digest of the session instead.
 
 ## 2. Spawn three reviewers in parallel
 
-One message, three `Task` calls, `subagent_type: generalPurpose`, agent mode (`readonly: false`). Reviewers need MCP access to look up the tickets, chat threads, and observability traces the transcript references, and readonly strips MCPs.
+One response, three `delegate_task` calls with `mode: "async"` and full tool access. Reviewers need MCP access to look up the tickets, chat threads, and observability traces the transcript references.
 
-Each reviewer and the synthesizer name a role line in the `pstack-models.mdc` rule and a default. Set `model` to that line's value, or to the default if the rule or the line is missing. Leave `model` unset when the value is `auto` or `inherit-parent`. If the Task tool rejects a slug, use the default and say so. If it rejects the default, use the closest valid slug of the same family from its error message. Pick each subagent's reasoning level and fast or standard speed for the job, per the Subagents section of the **poteto-mode** skill.
+Each reviewer and the synthesizer name a role line in the model sheet and a default. Set `target` from that line's entry, or from the default if the sheet or the line is missing. Leave `target` unset when the value is `auto` or `inherit-parent`. If `delegate_task` rejects an entry, use the default and say so. If it rejects the default, use another target of the same family from `orchestrator_capabilities`. Pick each subagent's reasoning level and fast or standard speed for the job, per the Subagents section of the **poteto-mode** skill.
 
-| Lens | Role line | Default `model` | Prompt template |
+| Lens | Role line | Default | Prompt template |
 |---|---|---|---|
-| Judgment | `reflect judgment, divergent, synthesizer` | `claude-opus-5-5-xhigh` | `references/judgment-reviewer.md` |
-| Tooling | `reflect tooling` | `grok-4.7-xhigh-fast` | `references/tooling-reviewer.md` |
-| Divergent | `reflect judgment, divergent, synthesizer` | `claude-opus-5-5-xhigh` | `references/divergent-reviewer.md` |
+| Judgment | `reflect judgment, divergent, synthesizer` | default in [Models](#models) | `references/judgment-reviewer.md` |
+| Tooling | `reflect tooling` | default in [Models](#models) | `references/tooling-reviewer.md` |
+| Divergent | `reflect judgment, divergent, synthesizer` | default in [Models](#models) | `references/divergent-reviewer.md` |
 
-Pass each template verbatim, substituting the transcript path or digest where marked. Reviewers return findings in the `Task` response body.
+Pass each template verbatim, substituting the transcript path or digest where marked. Reviewers return findings in their final message, which arrives as the `delegate_task` result.
 
 ## 3. Synthesize
 
-One `Task` call, `subagent_type: generalPurpose`, `model` from the `reflect judgment, divergent, synthesizer` line (default `claude-opus-5-5-xhigh`), agent mode (`readonly: false`). It spot-verifies citations through MCP, and readonly strips MCPs. Pass `references/synthesizer.md` verbatim, with each reviewer's full output inlined where marked. It returns an Accepted / Rejected / Backlog list.
+One `delegate_task` call with full tool access and `target` from the `reflect judgment, divergent, synthesizer` line (default in [Models](#models)). It spot-verifies citations through MCP. Pass `references/synthesizer.md` verbatim, with each reviewer's full output inlined where marked. It returns an Accepted / Rejected / Backlog list.
 
 ## 4. Structural enforcement check
 
@@ -51,9 +61,9 @@ File each Backlog item to your team's devex or backlog tracker without waiting. 
 Follow each approved row's Routing exactly:
 
 - Trivial existing-skill edit (a one-line bullet, a tightened sentence, a stale fact corrected): the parent does it directly.
-- Substantive existing-skill edit (a new section, a new pattern table, more than ~10 lines): hand to Cursor's built-in `create-skill` skill and run its draft / test / iterate loop.
-- `tune description: <skill path>` (the skill exists but didn't trigger when it should have): hand to `create-skill` and run its description-optimization loop.
-- `new skill via create-skill: <kebab-name>`: hand creation to `create-skill`. Do not invent the shape ad hoc.
+- Substantive existing-skill edit (a new section, a new pattern table, more than ~10 lines): hand to the harness's skill-authoring skill (`skill-creator` where installed) and run its draft / test / iterate loop.
+- `tune description: <skill path>` (the skill exists but didn't trigger when it should have): hand to `skill-creator` and run its description-optimization loop.
+- `new skill via skill-creator: <kebab-name>`: hand creation to `skill-creator`. Do not invent the shape ad hoc.
 
 If your environment ships a SKILL.md validator, run it on every touched skill before declaring done.
 
@@ -65,3 +75,10 @@ Short list, no preamble:
 - New skills created: `<skill path>`. One line each (rare).
 - Backlog filed to the devex tracker: `<issue title>` (`<tags>`). One line each.
 - Dropped: one line per rejected finding + reason from the synthesizer.
+
+## Models
+
+Role defaults on T3, stamped from `plugins/pstack/models.json`. A role line in the model sheet overrides each one. The sheet is `t3-pstack-models.md` in the host's config directory (`$CLAUDE_CONFIG_DIR` or `~/.claude` on Claude Code, `$CODEX_HOME` or `~/.codex` on Codex), and `/setup-pstack` writes it. An entry is `<providerInstanceId>/<modelId>` plus `<optionId>=<value>` pairs, and it maps onto `delegate_task`'s `target`, with the provider instance as `providerInstanceId`, the model as `model`, and the pairs as `options`. It splits at its first `/`, so a model ID with its own `/`, such as OpenCode's `<provider>/<model>`, is written whole after it. Option IDs differ per provider, so take them from `orchestrator_capabilities`. `inherit-parent` or `auto` omits `target`.
+
+- reflect tooling: `claudeAgent/claude-opus-5-5 effort=xhigh`
+- reflect judgment, divergent, synthesizer: `claudeAgent/claude-opus-5-5 effort=xhigh`

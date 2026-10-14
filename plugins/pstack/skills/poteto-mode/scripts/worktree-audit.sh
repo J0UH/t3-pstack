@@ -61,9 +61,9 @@ elif raw=$(gh pr list --author "@me" --state all --limit 1000 \
 fi
 [ -s "$prs" ] || echo "[]" > "$prs"
 
-# Transcripts dir: ~/.cursor/projects/<slugified-repo-path>/agent-transcripts.
-slug=$(printf '%s' "$main_wt" | sed 's#^/##; s#/#-#g')
-transcripts="$HOME/.cursor/projects/$slug/agent-transcripts"
+# T3 keeps chats in threads, not files, so LAST_CHAT stays empty and the
+# playbook checks each thread's worktreePath instead.
+transcripts=""
 now=$(date +%s)
 
 echo "# base: $base"

@@ -24,16 +24,17 @@ Before spawning reviewers, state the intent in one clear paragraph from the user
 
 ## Step 3, Spawn Reviewers
 
-Launch all reviewers in a single message with the Task tool, one per entry on the `interrogate reviewers` line in `~/.cursor/rules/pstack-models.mdc`, labeled Reviewer A, B, and so on to match the entry count. If the rule or that line is missing, use the table defaults.
+Launch all reviewers in a single response with `delegate_task`, one per entry on the `interrogate reviewers` line in the model sheet, labeled Reviewer A, B, and so on to match the entry count. If the sheet or that line is missing, use the table defaults.
 
 | Subagent | Default model |
 |----------|---------------|
-| Reviewer A | `claude-opus-5-5-xhigh` |
-| Reviewer B | `grok-4.7-xhigh-fast` |
+| Reviewer A | `claudeAgent/claude-opus-5-5 effort=xhigh` |
+| Reviewer B | `codex/gpt-6.1-sol reasoningEffort=xhigh` |
+| Reviewer C | `grok/grok-4.7 reasoningEffort=xhigh` |
 
-Each reviewer gets `subagent_type: generalPurpose`, `readonly: true`, and `model` set to its configured entry, or its table default when there is no configured line. Omit `model` for an `auto` or `inherit-parent` entry, so that reviewer runs on the parent model.
+Each reviewer gets `role: "review"`, a brief that says to inspect only and change no file, and `target` set from its configured entry, or from its table default when there is no configured line. Omit `target` for an `auto` or `inherit-parent` entry, so that reviewer runs on the parent model.
 
-If the Task tool rejects a configured entry, run that reviewer on its family's table default and say so. Families go by prefix: `claude-*`, and `grok-*` with `cursor-grok-*` and `composer-*`. A refused `composer-*` entry runs on Reviewer B's default. With no family match, use Reviewer A's default. If it rejects a table default, spawn with the closest equivalent from the valid slugs in its error message (prefer the same family and reasoning tier), and open a separate PR to update the default table. Do not block the review on the slug issue. Never treat an alias entry as a rejected slug or apply either fallback to it.
+If `delegate_task` rejects a configured entry, run that reviewer on another target of the same family from `orchestrator_capabilities` and say so. A model's family is the first segment of its ID's last `/` part, such as `claude`, `gpt`, or `grok`, whatever provider instance serves it. With no family match, use Reviewer A's default. If it rejects a table default, spawn on the closest target of the same family from `orchestrator_capabilities` (prefer the same reasoning tier), and open a separate PR to update the default table. Do not block the review on the slug issue. Never treat an alias entry as a rejected slug or apply either fallback to it.
 
 Read `references/reviewer-prompt.md` and fill in the same template for every reviewer with the stated intent, the diff or file contents, the rubric from `references/rubric.md`, and the code-quality lens from `references/code-quality-review.md`. Pick each subagent's reasoning level and fast or standard speed for the job, per the Subagents section of the **poteto-mode** skill.
 
@@ -72,3 +73,9 @@ You are the lead reviewer, a pragmatic senior engineer, not a neutral aggregator
 
 ### Agreement Map
 [Where models agreed and diverged, and what that pattern tells us.]
+
+## Models
+
+Role defaults on T3, stamped from `plugins/pstack/models.json`. A role line in the model sheet overrides each one. The sheet is `t3-pstack-models.md` in the host's config directory (`$CLAUDE_CONFIG_DIR` or `~/.claude` on Claude Code, `$CODEX_HOME` or `~/.codex` on Codex), and `/setup-pstack` writes it. An entry is `<providerInstanceId>/<modelId>` plus `<optionId>=<value>` pairs, and it maps onto `delegate_task`'s `target`, with the provider instance as `providerInstanceId`, the model as `model`, and the pairs as `options`. It splits at its first `/`, so a model ID with its own `/`, such as OpenCode's `<provider>/<model>`, is written whole after it. Option IDs differ per provider, so take them from `orchestrator_capabilities`. `inherit-parent` or `auto` omits `target`.
+
+- interrogate reviewers: `claudeAgent/claude-opus-5-5 effort=xhigh`, `codex/gpt-6.1-sol reasoningEffort=xhigh`, `grok/grok-4.7 reasoningEffort=xhigh`
