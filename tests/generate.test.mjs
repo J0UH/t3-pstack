@@ -26,7 +26,6 @@ import {
   assertChangesHeading,
   changes,
   frozenHookFaults,
-  hookDigest,
   loadModels,
   parseFrontmatter,
   plan,
@@ -35,6 +34,7 @@ import {
   stampAgentPaths,
   stampVersion,
 } from "../tools/generate.mjs";
+import { hookDigest } from "../tools/plugin.mjs";
 import { walk } from "../tools/validate-skills.mjs";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -315,10 +315,19 @@ describe("plan, changes, apply", () => {
     made.push(dir);
     return dir;
   };
+  // A copy committed as its own origin/main, which the hooks check compares with.
+  const git = (dir, ...args) => {
+    const r = spawnSync("git", ["-C", dir, "-c", "user.name=t", "-c", "user.email=t@t", ...args], { encoding: "utf8" });
+    expect(r.status, r.stderr).toBe(0);
+  };
   const repoCopy = () => {
     const dir = scratch("pstack-generate-");
     cpSync(repoRoot, dir, { recursive: true, filter: (src) => ![".git", "node_modules"].includes(basename(src)) });
     symlinkSync(join(repoRoot, "node_modules"), join(dir, "node_modules"));
+    git(dir, "init", "-q");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-qm", "main");
+    git(dir, "update-ref", "refs/remotes/origin/main", "HEAD");
     return dir;
   };
   const snapshot = (dir) => Object.fromEntries(walk(dir).map((path) => [path, readFileSync(path, "utf8")]));
@@ -553,6 +562,22 @@ describe("plan, changes, apply", () => {
     expect(problems(root)).toEqual([expect.stringContaining("hooks/linked.sh does not exist in the plugin"), changed]);
   });
 
+  test("problems compares the hooks files with origin/main, so a repinned change cannot keep its old changedIn", () => {
+    const root = repoCopy();
+    const hooks = "plugins/pstack/hooks/codex-hooks.json";
+    const text = readFileSync(join(root, hooks), "utf8").replace("startup|resume|clear|compact", "startup|resume|compact");
+    writeFileSync(join(root, hooks), text);
+    const pins = JSON.parse(readFileSync(join(root, "tools/frozen-hooks.json"), "utf8"));
+    pins[hooks].sha256 = hookDigest(text);
+    writeFileSync(join(root, "tools/frozen-hooks.json"), JSON.stringify(pins, null, 2) + "\n");
+    const version = readFileSync(join(root, "VERSION"), "utf8").trim();
+    expect(problems(root)).toEqual([
+      `${hooks} differs from origin/main, which already ships ${version}, so this change needs a new VERSION`,
+    ]);
+    rmSync(join(root, ".git"), { recursive: true });
+    expect(problems(root)).toEqual([expect.stringMatching(/^tools\/frozen-hooks.json: cannot find origin\/main to compare the hooks files with: fatal: not a git repository/)]);
+  });
+
   test("problems reports a root with no plugin directory, down to the last check, and does not throw", () => {
     expect(problems(scratch("pstack-empty-"))).toContainEqual(expect.stringContaining("plugins/pstack/hooks/hooks.json"));
   });
@@ -563,31 +588,41 @@ describe("frozen hook entries", () => {
   const hooks = '{"hooks":{"SessionStart":[{"matcher":"startup","hooks":[{"type":"command","command":"x"}]}]}}';
   const changed = hooks.replace("startup", "startup|resume");
   const changelog = (body) => `# CHANGES\n\n## 2.1.0 - Next\n\n${body}\n\n## 2.0.0 - Before\n\nRerun the installer.\n`;
+  const main = { version: "2.0.0", files: { [path]: hooks } };
+  const faults = ({ pins, file = changed, version = "2.1.0", body = "Rerun the installer.", shipped = main }) =>
+    frozenHookFaults({ pins, files: { [path]: file }, version, changelog: changelog(body), shipped });
 
-  test("pass while each hooks file matches its pin, whatever its formatting", () => {
+  test("pass while each hooks file matches its pin and main, whatever its formatting", () => {
     const pins = { [path]: { sha256: hookDigest(hooks), changedIn: "2.0.0" } };
-    const files = { [path]: JSON.stringify(JSON.parse(hooks), null, 2) };
-    expect(frozenHookFaults({ pins, files, version: "2.1.0", changelog: changelog("Nothing.") })).toEqual([]);
+    expect(faults({ pins, file: JSON.stringify(JSON.parse(hooks), null, 2), body: "Nothing." })).toEqual([]);
   });
 
   test("fail on a change until it is pinned to the release that announces it", () => {
     const pins = { [path]: { sha256: hookDigest(hooks), changedIn: "2.0.0" } };
-    expect(frozenHookFaults({ pins, files: { [path]: changed }, version: "2.1.0", changelog: changelog("Nothing.") })).toEqual([
+    expect(faults({ pins, body: "Nothing." })).toEqual([
       `${path} changed, which stops its hook in every Codex home until the installer reruns. ` +
         `Pin "sha256": "${hookDigest(changed)}" and "changedIn": "2.1.0" in tools/frozen-hooks.json, ` +
         "and tell users to rerun the installer in CHANGES.md's 2.1.0 entry.",
     ]);
     const repinned = { [path]: { sha256: hookDigest(changed), changedIn: "2.1.0" } };
-    expect(frozenHookFaults({ pins: repinned, files: { [path]: changed }, version: "2.1.0", changelog: changelog("Nothing.") })).toEqual([
+    expect(faults({ pins: repinned, body: "Nothing." })).toEqual([
       `${path} changes in 2.1.0, but CHANGES.md's 2.1.0 entry does not tell users to rerun the installer`,
     ]);
-    expect(
-      frozenHookFaults({ pins: repinned, files: { [path]: changed }, version: "2.1.0", changelog: changelog("Rerun the installer.") }),
-    ).toEqual([]);
+    expect(faults({ pins: repinned })).toEqual([]);
+  });
+
+  test("fail on a repinned change that keeps main's changedIn or main's VERSION", () => {
+    const stale = { [path]: { sha256: hookDigest(changed), changedIn: "2.0.0" } };
+    const stalePin = `${path} differs from origin/main, so its pin's "changedIn" must be 2.1.0, not 2.0.0`;
+    expect(faults({ pins: stale })).toEqual([stalePin]);
+    expect(faults({ pins: stale, shipped: { version: "2.0.0", files: {} } })).toEqual([stalePin]);
+    expect(faults({ pins: stale, version: "2.0.0" })).toEqual([
+      `${path} differs from origin/main, which already ships 2.0.0, so this change needs a new VERSION`,
+    ]);
   });
 
   test("fail on a hooks file with no pin and a pin with no file", () => {
-    expect(frozenHookFaults({ pins: { "a.json": { sha256: "x" } }, files: { [path]: hooks }, version: "2.1.0", changelog: "" })).toEqual([
+    expect(frozenHookFaults({ pins: { "a.json": { sha256: "x" } }, files: { [path]: hooks }, version: "2.1.0", changelog: "", shipped: main })).toEqual([
       `${path} has no pin in tools/frozen-hooks.json`,
       "tools/frozen-hooks.json pins a.json, which no manifest names",
     ]);

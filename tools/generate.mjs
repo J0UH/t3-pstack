@@ -22,7 +22,7 @@
 // the plugin layout, agent frontmatter, the Codex marketplace, and both hooks
 // files against their pins in tools/frozen-hooks.json.
 
-import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import {
   existsSync,
   lstatSync,
@@ -42,7 +42,7 @@ import { Value } from "typebox/value";
 
 import { panelFamilies, parseEntry } from "../plugins/pstack/skills/setup-pstack/scripts/t3-sheet.mjs";
 import { applyRegions, parseFrontmatter, ROUTED_SKILL, t3Regions } from "./derive-t3.mjs";
-import { PLUGIN, SKILLS } from "./plugin.mjs";
+import { FROZEN_HOOKS, hookDigest, PLUGIN, SKILLS } from "./plugin.mjs";
 import { pathIsInside, validateSkillsTree, walk } from "./validate-skills.mjs";
 
 export { parseFrontmatter };
@@ -383,11 +383,11 @@ export function validateHooks(hooksJson, { statOf, file = "hooks/hooks.json", ro
 // delivers a new entry at the next app-server start, so a changed hooks file
 // silently stops the hook in every home until the installer trusts it again.
 // Each hooks file is pinned with the release that last changed it, and that
-// release's CHANGES entry must tell users to rerun the installer.
-export const FROZEN_HOOKS = "tools/frozen-hooks.json";
-export const hookDigest = (text) => createHash("sha256").update(JSON.stringify(JSON.parse(text))).digest("hex");
-
-export function frozenHookFaults({ pins, files, version, changelog }) {
+// release's CHANGES entry must tell users to rerun the installer. `shipped`
+// holds VERSION and the hooks files as origin/main has them, since main is
+// what the marketplaces deliver: a file that differs from main's changes in
+// this release, so its pin must name this release, and VERSION must be new.
+export function frozenHookFaults({ pins, files, version, changelog, shipped }) {
   const faults = Object.keys(files)
     .filter((path) => !Object.hasOwn(pins, path))
     .map((path) => `${path} has no pin in ${FROZEN_HOOKS}`);
@@ -398,17 +398,37 @@ export function frozenHookFaults({ pins, files, version, changelog }) {
       continue;
     }
     const digest = hookDigest(files[path]);
+    const changed = shipped.files[path] === undefined || hookDigest(shipped.files[path]) !== digest;
     if (digest !== pin.sha256) {
       faults.push(
         `${path} changed, which stops its hook in every Codex home until the installer reruns. ` +
           `Pin "sha256": "${digest}" and "changedIn": "${version}" in ${FROZEN_HOOKS}, ` +
           `and tell users to rerun the installer in CHANGES.md's ${version} entry.`,
       );
+    } else if (changed && version === shipped.version) {
+      faults.push(`${path} differs from origin/main, which already ships ${version}, so this change needs a new VERSION`);
+    } else if (changed && pin.changedIn !== version) {
+      faults.push(`${path} differs from origin/main, so its pin's "changedIn" must be ${version}, not ${pin.changedIn}`);
     } else if (pin.changedIn === version && !/rerun the installer/i.test(entry)) {
       faults.push(`${path} changes in ${version}, but CHANGES.md's ${version} entry does not tell users to rerun the installer`);
     }
   }
   return faults;
+}
+
+// VERSION and `paths` at the merge-base of HEAD and origin/main, with
+// undefined for a path main lacks. CI checks out full history for this.
+function shippedOnMain(root, paths) {
+  const git = (...args) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  let base;
+  try {
+    base = git("merge-base", "HEAD", "origin/main").trim();
+  } catch (err) {
+    throw new Error(`${FROZEN_HOOKS}: cannot find origin/main to compare the hooks files with: ${(err.stderr || err.message).trim()}`);
+  }
+  const listed = new Set(git("ls-tree", "-r", "--name-only", base, "--", "VERSION", ...paths).split("\n"));
+  const show = (path) => (listed.has(path) ? git("show", `${base}:${path}`) : undefined);
+  return { version: show("VERSION")?.trim(), files: Object.fromEntries(paths.map((path) => [path, show(path)])) };
 }
 
 // Every file the generator writes, as exact text by repo-relative path,
@@ -528,11 +548,13 @@ export function problems(root, models) {
   }
   // A Codex manifest that does not parse names no hooks file to compare.
   if (codex) attempt(() => {
+    const paths = hookFiles.map((file) => `${PLUGIN}/${file}`);
     const faults = frozenHookFaults({
       pins: JSON.parse(read(FROZEN_HOOKS)),
-      files: Object.fromEntries(hookFiles.map((file) => [`${PLUGIN}/${file}`, read(`${PLUGIN}/${file}`)])),
+      files: Object.fromEntries(paths.map((path) => [path, read(path)])),
       version: read("VERSION").trim(),
       changelog: read("CHANGES.md"),
+      shipped: shippedOnMain(root, paths),
     });
     if (faults.length) throw new Error(faults.join("\n"));
   });
