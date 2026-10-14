@@ -66,6 +66,16 @@ describe("parseEntry", () => {
   });
 });
 
+describe("checkSheet without a catalog", () => {
+  test("checks the grammar and the panel rule, not whether a target dispatches here", () => {
+    expect(check("bug-fix: someprovider/unlisted-model effort=max\nsession hook: on\n", null)).toEqual([]);
+    expect(check(`bug-fix: claude-opus\n${PANEL}: someprovider/claude-a, otherprovider/claude-b\n`, null)).toEqual([
+      'bug-fix: "claude-opus" does not start with <providerInstanceId>/<modelId>',
+      `${PANEL}: a panel needs at least two model families among its targets (inherit-parent does not count), got claude`,
+    ]);
+  });
+});
+
 describe("checkSheet against a catalog", () => {
   test("the default sheet setup-pstack writes dispatches", () => {
     const setup = readFileSync(join(root, "plugins/pstack/skills/setup-pstack/SKILL.md"), "utf8");
