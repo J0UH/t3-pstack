@@ -1,4 +1,5 @@
 import {
+  ChecksUnavailable,
   WatcherQueryError,
   resolveChecks,
   resolveReviewThreads,
@@ -6,6 +7,14 @@ import {
 import { reviewSettler, waitReason, type ReviewSettler } from "./settle.ts";
 import type * as T from "./types.ts";
 import { nonEmpty } from "./types.ts";
+export function assessGitHubMerge(args: {
+  readonly mergeStateStatus: T.MergeStateStatus;
+  readonly headRollupState: null;
+}): T.GitHubMergeAllowed;
+export function assessGitHubMerge(args: {
+  readonly mergeStateStatus: T.MergeStateStatus;
+  readonly headRollupState: T.RollupState;
+}): T.GitHubMergeAssessment;
 export function assessGitHubMerge(args: {
   readonly mergeStateStatus: T.MergeStateStatus;
   readonly headRollupState: T.RollupState;
@@ -51,6 +60,96 @@ async function mergeAssessment(
     }),
   };
 }
+// GitHub reads BLOCKED for a moment while it computes mergeability, while a
+// queued PR changes state, and until a required check on a new head registers.
+// A BLOCKED read stops the watcher only once the same head has read BLOCKED,
+// with no check pending, across this many seconds.
+const BLOCKED_CONFIRM_SECONDS = 60;
+class BlockUnconfirmed extends Error {
+  readonly pr: T.PrContext;
+  constructor(pr: T.PrContext) {
+    super(`#${pr.number} reads BLOCKED; confirming the merge block`);
+    this.name = "BlockUnconfirmed";
+    this.pr = pr;
+  }
+}
+interface BlockClock {
+  observe(facts: T.PullRequestFacts, ci: T.CiState): void;
+  held(facts: T.PullRequestFacts): boolean;
+}
+function blockClock(clock: Pick<WatchClock, "now">): BlockClock {
+  const reads = new Map<
+    T.PrNumber,
+    {
+      readonly headRefOid: string | null;
+      readonly since: number;
+      readonly last: number;
+    }
+  >();
+  return {
+    observe({ context, headRefOid, mergeStateStatus }, ci) {
+      if (mergeStateStatus !== "BLOCKED" || ci.kind === "ci-pending") {
+        reads.delete(context.number);
+        return;
+      }
+      const prior = reads.get(context.number);
+      const since =
+        prior?.headRefOid === headRefOid ? prior.since : clock.now();
+      reads.set(context.number, { headRefOid, since, last: clock.now() });
+    },
+    held({ context, headRefOid }) {
+      const read = reads.get(context.number);
+      return (
+        read?.headRefOid === headRefOid &&
+        read.last - read.since >= BLOCKED_CONFIRM_SECONDS
+      );
+    },
+  };
+}
+// gateReason gives these two reasons only to the frontier.
+function confirmGate(
+  blocker: T.MergeBlocker,
+  row: T.PrSnapshot | undefined,
+  blocks: BlockClock | undefined
+): void {
+  if (
+    blocker.kind === "merge-gate" &&
+    (blocker.reason === "merge-blocked" ||
+      blocker.reason === "review-required") &&
+    row?.kind === "open" &&
+    row.facts.mergeStateStatus === "BLOCKED" &&
+    blocks !== undefined &&
+    !blocks.held(row.facts)
+  )
+    throw new BlockUnconfirmed(blocker.pr);
+}
+// Right after a push the head rollup is null until the first check registers.
+// An earlier commit that reported checks, or mergeability GitHub is still
+// computing, means the head has not reported yet.
+async function noChecksCi(
+  reader: T.GitHubReader,
+  facts: T.PullRequestFacts
+): Promise<T.CiNone> {
+  const commits = await reader.commitRollups(facts.context);
+  if (commits.some((commit) => commit.state !== null))
+    throw new ChecksUnavailable(
+      `no checks reported on head ${facts.headRefOid}, but a commit on this PR has reported checks`
+    );
+  if (facts.mergeable === "UNKNOWN")
+    throw new ChecksUnavailable(
+      `no checks reported on head ${facts.headRefOid}, and GitHub has not computed mergeability yet`
+    );
+  return {
+    kind: "ci-none",
+    failed: [],
+    pending: [],
+    hadPreviousPassingCi: false,
+    github: assessGitHubMerge({
+      mergeStateStatus: facts.mergeStateStatus,
+      headRollupState: null,
+    }),
+  };
+}
 const AUTOMATION_TOKENS = [
   "bugbot",
   "security review",
@@ -63,6 +162,7 @@ export async function readSnapshot(args: {
   readonly pendingHistory: "include" | "omit";
   readonly allowDraft: boolean;
   readonly settler?: ReviewSettler;
+  readonly blockClock?: BlockClock;
 }): Promise<T.PrSnapshot> {
   const facts = await args.reader.pullRequest(args.context);
   if (facts.state === "MERGED" || facts.mergedAt !== null)
@@ -71,18 +171,22 @@ export async function readSnapshot(args: {
     return { kind: "closed", context: args.context, facts };
   const threads = await resolveReviewThreads(args.reader, args.context);
   const checks = await resolveChecks(args.reader, args.context);
+  const reported: readonly T.Check[] = checks.checks;
   const failed = nonEmpty(
-    checks.checks.filter(
-      (check): check is T.FailedCheck => check.kind === "failed"
-    )
+    reported.filter((check): check is T.FailedCheck => check.kind === "failed")
   );
   const pending = nonEmpty(
-    checks.checks.filter(
+    reported.filter(
       (check): check is T.PendingCheck => check.kind === "pending"
     )
   );
   let ci: T.CiState;
-  if (failed === null && pending !== null && args.pendingHistory === "omit")
+  if (checks.source === "none") ci = await noChecksCi(args.reader, facts);
+  else if (
+    failed === null &&
+    pending !== null &&
+    args.pendingHistory === "omit"
+  )
     ci = {
       kind: "ci-pending",
       source: checks.source,
@@ -125,6 +229,16 @@ export async function readSnapshot(args: {
         github: merge.github,
       };
   }
+  // A no-checks head may read BLOCKED for a required check that has not
+  // registered yet, so it waits on any row, not only at the frontier gate.
+  args.blockClock?.observe(facts, ci);
+  if (
+    ci.kind === "ci-none" &&
+    facts.mergeStateStatus === "BLOCKED" &&
+    args.blockClock !== undefined &&
+    !args.blockClock.held(facts)
+  )
+    throw new BlockUnconfirmed(args.context);
   return {
     kind: "open",
     context: args.context,
@@ -162,22 +276,36 @@ const ciBlocker = (row: T.PrSnapshot): T.MergeBlocker | null =>
     : null;
 function gateReason(
   row: T.PrSnapshot,
-  allowDraft: boolean
+  allowDraft: boolean,
+  frontier: boolean
 ): T.MergeGateReason | null {
   if (row.kind === "merged") return null;
   if (row.kind === "closed") return "closed-without-merge";
   if (row.facts.isDraft && !allowDraft) return "draft-pr";
-  return row.facts.reviewDecision === "CHANGES_REQUESTED"
-    ? "changes-requested"
-    : null;
+  if (row.facts.reviewDecision === "CHANGES_REQUESTED")
+    return "changes-requested";
+  // These two wait for a person, and a PR needs one only once it is the next
+  // to merge. Every PR above the frontier becomes the frontier first.
+  if (!frontier) return null;
+  if (row.facts.reviewDecision === "REVIEW_REQUIRED") return "review-required";
+  // BLOCKED with clean CI is some other branch protection rule, such as signed
+  // commits or a required check that never reported. GitHub will not merge it.
+  return row.facts.mergeStateStatus === "BLOCKED" ? "merge-blocked" : null;
 }
+// Gates that pending checks or a settling review can still explain wait first.
+const DEFERRED_WHILE_WAITING: ReadonlySet<T.MergeGateReason> = new Set([
+  "draft-pr",
+  "review-required",
+  "merge-blocked",
+]);
 function gateBlocker(
   row: T.PrSnapshot,
-  allowDraft: boolean
+  allowDraft: boolean,
+  frontier: boolean
 ): T.MergeBlocker | null {
-  const reason = gateReason(row, allowDraft);
+  const reason = gateReason(row, allowDraft, frontier);
   return reason === null ||
-    (reason === "draft-pr" &&
+    (DEFERRED_WHILE_WAITING.has(reason) &&
       row.kind === "open" &&
       (row.ci.kind === "ci-pending" || row.settle.kind === "settling"))
     ? null
@@ -185,7 +313,8 @@ function gateBlocker(
 }
 function readyContribution(
   row: T.PrSnapshot,
-  allowDraft: boolean
+  allowDraft: boolean,
+  frontier: boolean
 ): T.ReadyPr | T.MergedPr | null {
   if (row.kind === "merged")
     return {
@@ -195,10 +324,10 @@ function readyContribution(
     };
   if (
     row.kind !== "open" ||
-    row.ci.kind !== "ci-clean" ||
+    (row.ci.kind !== "ci-clean" && row.ci.kind !== "ci-none") ||
     row.threads.length !== 0 ||
     conflictBlocker(row) !== null ||
-    gateReason(row, allowDraft) !== null
+    gateReason(row, allowDraft, frontier) !== null
   )
     return null;
   const reviewDecision = row.facts.reviewDecision;
@@ -226,14 +355,14 @@ export function classifyPr(
     conflictBlocker(row),
     threadBlocker(row),
     ciBlocker(row),
-    gateBlocker(row, allowDraft),
+    gateBlocker(row, allowDraft, true),
   ])
     if (blocker !== null) return { kind: "blocker", blocker };
   if (row.kind === "open" && row.ci.kind === "ci-pending")
     return { kind: "waiting", frontier: row.context, pending: row.ci.pending };
   if (row.kind === "open" && row.settle.kind === "settling")
     return { kind: "settling", frontier: row.context, settle: row.settle };
-  const ready = readyContribution(row, allowDraft);
+  const ready = readyContribution(row, allowDraft, true);
   if (ready === null) throw new Error("snapshot has no classified decision");
   return ready.kind === "merged-pr"
     ? { kind: "merged", pr: ready }
@@ -248,8 +377,9 @@ export function selectTierMajorStackDecision(
       const blocker = tier(row);
       if (blocker !== null) return { kind: "blocker", blocker };
     }
+  const frontier = rows.find((row) => row.kind !== "merged");
   for (const row of rows) {
-    const blocker = gateBlocker(row, allowDraft);
+    const blocker = gateBlocker(row, allowDraft, row === frontier);
     if (blocker !== null) return { kind: "blocker", blocker };
   }
   for (const row of rows)
@@ -263,7 +393,7 @@ export function selectTierMajorStackDecision(
       return { kind: "settling", frontier: row.context, settle: row.settle };
   const prs = nonEmpty(
     rows
-      .map((row) => readyContribution(row, allowDraft))
+      .map((row) => readyContribution(row, allowDraft, row === frontier))
       .filter((row): row is T.ReadyPr | T.MergedPr => row !== null)
   );
   if (prs === null || prs.length !== rows.length)
@@ -383,6 +513,29 @@ async function pollUntilTerminal<V>(args: {
       result = await args.step();
       failures = 0;
     } catch (error) {
+      if (error instanceof BlockUnconfirmed) {
+        failures = 0;
+        const reason = { kind: "confirming-block" } as const;
+        args.dependencies.emit(
+          args.stamp({
+            kind: "WAITING",
+            terminal: false,
+            frontier: error.pr,
+            reason,
+          })
+        );
+        if (
+          deadlinePassed(started, args.options, args.dependencies.clock.now())
+        )
+          return args.stamp({
+            kind: "TIMEOUT",
+            terminal: true,
+            exitCode: 5,
+            reason,
+          });
+        await args.dependencies.clock.sleep(args.options.interval);
+        continue;
+      }
       if (!(error instanceof WatcherQueryError)) throw error;
       failures += 1;
       if (!error.failure.retryable || failures >= args.options.maxQueryErrors)
@@ -430,6 +583,9 @@ export async function runSimple(args: {
 }): Promise<T.TerminalVerdict> {
   const stamp = verdictFactory(args.dependencies.clock, args.mode);
   const settler = reviewSettler(args);
+  const blocks = args.statusOnly
+    ? undefined
+    : blockClock(args.dependencies.clock);
   const step = async (): Promise<StepResult<T.TerminalVerdict>> => {
     const rows: T.PrSnapshot[] = [];
     for (const context of args.contexts)
@@ -440,6 +596,7 @@ export async function runSimple(args: {
           pendingHistory: "include",
           allowDraft: args.options.allowDraft,
           settler,
+          blockClock: blocks,
         })
       );
     const complete = nonEmpty(rows);
@@ -468,11 +625,19 @@ export async function runSimple(args: {
       args.mode === "single"
         ? classifyPr(complete[0], args.options.allowDraft)
         : selectTierMajorStackDecision(complete, args.options.allowDraft);
-    if (decision.kind === "blocker")
+    if (decision.kind === "blocker") {
+      confirmGate(
+        decision.blocker,
+        complete.find(
+          (row) => row.context.number === decision.blocker.pr.number
+        ),
+        blocks
+      );
       return {
         kind: "terminal",
         verdict: blockerVerdict(stamp, decision.blocker),
       };
+    }
     if (decision.kind === "ready" || decision.kind === "merged")
       return {
         kind: "terminal",
@@ -720,6 +885,7 @@ export async function runQueued(args: {
 }): Promise<T.QueueTerminalVerdict> {
   let state = createQueueState(args.contexts, args.dependencies.clock.now());
   const stamp = verdictFactory(args.dependencies.clock, "queued-stack");
+  const blocks = blockClock(args.dependencies.clock);
   args.dependencies.emit(
     stamp({ kind: "QUEUE", terminal: false, queue: args.contexts })
   );
@@ -753,6 +919,7 @@ export async function runQueued(args: {
       context,
       pendingHistory: "omit",
       allowDraft: args.options.allowDraft,
+      blockClock: blocks,
     });
     const applied = applyQueueSnapshot(
       state,
@@ -790,6 +957,11 @@ export async function runQueued(args: {
           }),
         };
       case "blocker":
+        confirmGate(
+          evaluation.blocker,
+          state.snapshots.get(evaluation.blocker.pr.number),
+          blocks
+        );
         return {
           kind: "terminal",
           verdict: blockerVerdict(stamp, evaluation.blocker),

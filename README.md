@@ -30,11 +30,11 @@ Use poteto-mode to fix the search filter resetting when I change pages.
 
 The session-start hook tells each new chat when to enter `poteto-mode` on its own: work that touches more than one file, a design choice, or a bug whose cause is unknown. `poteto-mode` matches the task to a playbook and opens the other skills from there. They ship as upstream ships them, invoked by `poteto-mode` or typed by you (`/t3-pstack:<name>` on Claude Code, `$t3-pstack:<name>` on Codex).
 
-The plugin carries 61 skill directories, 24 of them `principle-*` leaves, and 4 agents.
+The plugin carries 62 skill directories, 24 of them `principle-*` leaves, and 4 agents.
 
 ## Staying current
 
-This repository syncs from Lauren's tree directly, synced against upstream `ce649c0`. `tools/upstream.json` pins each component, `tools/substitutions.json` holds the rewrite rules and a denylist of Cursor terms, and `tools/forks.json` declares every file the port keeps in its own form and why. `bun tools/sync.mjs <component> <sha>` derives each upstream file through the rules, merges it three ways with the port's copy, and fails on an undeclared fork, a denylist hit, or a rule that no longer matches upstream. [CONTRIBUTING.md](CONTRIBUTING.md#the-sync-boundary) has the details.
+This repository syncs from Lauren's tree directly, synced against upstream `1e5c90a`. `tools/upstream.json` pins each component, `tools/substitutions.json` holds the rewrite rules and a denylist of Cursor terms, and `tools/forks.json` declares every file the port keeps in its own form and why. `bun tools/sync.mjs <component> <sha>` derives each upstream file through the rules, merges it three ways with the port's copy, and fails on an undeclared fork, a denylist hit, or a rule that no longer matches upstream. [CONTRIBUTING.md](CONTRIBUTING.md#the-sync-boundary) has the details.
 
 ## Data handling
 

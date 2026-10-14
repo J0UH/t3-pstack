@@ -151,6 +151,12 @@
       "rationale": "Per-skill notes: ketchup"
     },
     {
+      "pattern": "Bundled skills live at `../<name>/SKILL.md` from this file, so put this file's absolute path in every `poteto-agent` prompt.",
+      "files": "^skills/poteto-mode/SKILL\\.md$",
+      "replacement": "Bundled skills live at `../<name>/SKILL.md` from this file, so put this file's absolute path in every `poteto-agent` prompt.\n\nOn Codex, read this file whole before acting, in a shell call of its own with `max_output_tokens: 10000`. A smaller output budget cuts lines out of its middle. If a read of it shows `tokens truncated`, read it again that way.",
+      "rationale": "Codex's model picks a shell read's output budget, often 3000 to 6000 tokens for a SKILL.md, and Codex 0.162.1 then cuts the middle of anything longer, which here is the Subagents section that holds the T3 dispatch rules. The head of a cut read survives, so the instruction sits there. tests/agent-skills.test.mjs keeps the file inside the 10000-token budget it names."
+    },
+    {
       "pattern": "- About to `AskQuestion` on a",
       "replacement": "- About to ask the user a question on a",
       "rationale": "the rule is about asking, not the tool",
@@ -627,8 +633,8 @@
     },
     {
       "pattern": "Run `drive` and `background` under `/loop` in dynamic mode.",
-      "replacement": "Run `drive` as a loop inside the turn: run the watcher with `--timeout 540` and the shell's own timeout above 540 seconds and under the 600-second tool cap, act on its verdict, and run it again. Report and stop when the verdict's head SHA, kind, and reason have not changed for two hours, or after three hours in all. Run `background` by arming T3's `watch_pull_request` on the frontier and taking the watcher's verdict with `--timeout 180` at each natural pause. A wait for a human review is `watch_pull_request` and the end of the turn, because another account's review wakes the thread. Unwatch with `unwatch_pull_request` when babysitting stops. The watcher holds `READY` until accounts other than the PR author and the `gh` viewer have been quiet on the PR for `--settle` seconds (default 300) since the latest push, opening, or ready for review, and up to 30 minutes after that while an `eyes` reaction is open, so no per-bot wait rules are needed.",
-      "rationale": "Playbooks: Babysit drive and background; the watch-pr settle overlay (t3-pstack 1.0.5)",
+      "replacement": "Run `drive` as a loop inside the turn: run the watcher with `--timeout 540` and the shell's own timeout above 540 seconds and under the 600-second tool cap, act on its verdict, and run it again. Report and stop when the verdict's head SHA, kind, and reason have not changed for two hours, or after three hours in all. A `BLOCKER` with reason `review-required` or `merge-blocked` (exit 6) needs a person, so report it and stop the loop instead of rerunning the watcher. `review-required` is the wait for a human review below, and `merge-blocked`, a branch protection rule the watcher cannot name, goes back to the user. Run `background` by arming T3's `watch_pull_request` on the frontier and taking the watcher's verdict with `--timeout 180` at each natural pause. A wait for a human review is `watch_pull_request` and the end of the turn, because another account's review wakes the thread. Unwatch with `unwatch_pull_request` when babysitting stops. The watcher holds `READY` until accounts other than the PR author and the `gh` viewer have been quiet on the PR for `--settle` seconds (default 300) since the latest push, opening, or ready for review, and up to 30 minutes after that while an `eyes` reaction is open, so no per-bot wait rules are needed.",
+      "rationale": "Playbooks: Babysit drive and background; the watch-pr settle overlay (t3-pstack 1.0.5); the exit 6 merge gates from pstack-claude #95 (t3-pstack 2.0.0-rc.2)",
       "files": "^skills/poteto-mode/playbooks/"
     },
     {

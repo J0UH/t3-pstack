@@ -8,6 +8,8 @@ function ciCell(row: T.PrSnapshot): string {
   switch (row.ci.kind) {
     case "ci-clean":
       return "✅";
+    case "ci-none":
+      return "➖ no checks";
     case "ci-pending":
       return `⏳ ${row.ci.pending.length} pending${was}`;
     case "ci-failing":
@@ -29,7 +31,9 @@ function reviewCell(row: T.PrSnapshot): string {
       : "🤖 running"
     : open
       ? `📝 ${open} open`
-      : "✅";
+      : row.facts.reviewDecision === "REVIEW_REQUIRED"
+        ? "👀 review required"
+        : "✅";
 }
 function mergeCell(row: T.PrSnapshot): string {
   if (row.kind === "merged") return "✅ merged";
@@ -41,7 +45,9 @@ function mergeCell(row: T.PrSnapshot): string {
     row.facts.mergeStateStatus === "DIRTY" ||
     row.facts.mergeStateStatus === "CONFLICTING"
     ? "⚠️ conflict"
-    : "✅";
+    : row.facts.mergeStateStatus === "BLOCKED"
+      ? "⛔ blocked"
+      : "✅";
 }
 export function renderStatusTable(rows: T.NonEmpty<T.PrSnapshot>): string {
   const lines = ["| PR | CI | Review | Merge |", "| --- | --- | --- | --- |"];
@@ -111,7 +117,11 @@ function renderBlocker(blocker: T.MergeBlocker | StatusQueryBlocker): string {
           ? "restore or remove the closed PR from the queued stack"
           : blocker.reason === "draft-pr"
             ? "mark the PR ready for review before waiting for the merge queue"
-            : "resolve the changes-requested review before waiting for the merge queue";
+            : blocker.reason === "review-required"
+              ? "human action needed: a required approving review is missing; report it and wait for a reviewer"
+              : blocker.reason === "merge-blocked"
+                ? "human action needed: a branch protection rule blocks the merge (mergeStateStatus=BLOCKED with no failing or pending checks); report it"
+                : "resolve the changes-requested review before waiting for the merge queue";
       return [
         `BLOCKER: ${blocker.reason}`,
         `pr=${blocker.pr.number}`,
@@ -140,6 +150,8 @@ export function renderPretty(verdict: T.WatcherVerdict): string {
     case "WAITING":
       if (verdict.reason.kind === "review-settling")
         return `WAITING: frontier=#${verdict.frontier.number}; ${settleText(verdict.reason, verdict.observedAt)}\n`;
+      if (verdict.reason.kind === "confirming-block")
+        return `WAITING: frontier=#${verdict.frontier.number}; confirming merge block (GitHub reads BLOCKED; stops if the same head still does after 60s)\n`;
       return verdict.reason.kind === "pending-checks"
         ? `WAITING: frontier=#${verdict.frontier.number}; ${verdict.reason.pending.length} check${verdict.reason.pending.length === 1 ? "" : "s"} pending\n`
         : `WAITING: frontier=#${verdict.frontier.number} is blocker-free; waiting for merge queue (${verdict.reason.unmergedCount} PR${verdict.reason.unmergedCount === 1 ? "" : "s"} unmerged)\n`;
@@ -152,7 +164,7 @@ export function renderPretty(verdict: T.WatcherVerdict): string {
     case "READY": {
       const detail =
         verdict.scope.kind === "single" && verdict.scope.pr.kind === "ready-pr"
-          ? `\nmergeStateStatus=${verdict.scope.pr.proof.ci.github.mergeStateStatus}\nreviewDecision=${verdict.scope.pr.proof.gate.reviewDecision}\nisDraft=${verdict.scope.pr.proof.gate.draft === "draft-allowed"}${verdict.scope.pr.proof.gate.draft === "draft-allowed" ? "\nnote=draft allowed (--allow-draft); leave draft \u2014 do not mark ready" : ""}`
+          ? `\nmergeStateStatus=${verdict.scope.pr.proof.ci.github.mergeStateStatus}\nreviewDecision=${verdict.scope.pr.proof.gate.reviewDecision}\nisDraft=${verdict.scope.pr.proof.gate.draft === "draft-allowed"}${verdict.scope.pr.proof.gate.draft === "draft-allowed" ? "\nnote=draft allowed (--allow-draft); leave draft \u2014 do not mark ready" : ""}${verdict.scope.pr.proof.ci.kind === "ci-none" ? "\nchecks=none reported on the head commit" : ""}`
           : "";
       return `READY: no merge conflicts, no unresolved review threads, no failing or pending checks${detail}\n`;
     }
@@ -163,6 +175,8 @@ export function renderPretty(verdict: T.WatcherVerdict): string {
         return "TIMEOUT: checks still pending\n";
       if (verdict.reason.kind === "status-unavailable")
         return "TIMEOUT: GitHub status remained unavailable\n";
+      if (verdict.reason.kind === "confirming-block")
+        return "TIMEOUT: still confirming merge block (GitHub reads BLOCKED)\n";
       if (verdict.reason.kind === "review-settling")
         return `TIMEOUT: ${settleText(verdict.reason, verdict.observedAt)}\n`;
       return `TIMEOUT: queued stack still has ${verdict.reason.unmergedCount} PR${verdict.reason.unmergedCount === 1 ? "" : "s"} unmerged; frontier=#${verdict.reason.frontier.number}\n`;
