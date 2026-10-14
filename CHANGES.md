@@ -2,6 +2,14 @@
 
 This file is the release changelog, with one `## <version> - <title>` entry per release, newest first. The Cursor-to-T3 rewrite rules live in [`tools/substitutions.json`](tools/substitutions.json), and the [sync boundary](CONTRIBUTING.md#the-sync-boundary) in `CONTRIBUTING.md` defines how a change to upstream's skill content is declared.
 
+## 2.0.0-rc.4 - Lauren's 0.15.25: `/ketchup` explains changes with pictures
+
+t3-pstack moves to Lauren Tan's pstack 0.15.25, cursor/plugins `6ce45c5`, for all three components. Only pstack changed upstream: `/ketchup` now helps the user understand each change, not only where it stands ([pstack #628](https://github.com/cursor/plugins/pull/628)), and the version moves to 0.15.25 ([pstack #614](https://github.com/cursor/plugins/pull/614)). `bun tools/sync.mjs` wrote the `/ketchup` change cleanly. Its three rules, `html_render` for upstream's `/visualize` and the T3 state checks, each still match once. At `6ce45c5` each component's dry run reports no undeclared fork, no denylist hit, and no substitution that matches nothing. The version bump touches only upstream's `plugin.json` files, which the port excludes, and neither hooks file changes.
+
+| Change | 2.0.0-rc.3 | 2.0.0-rc.4 | Source |
+| --- | --- | --- | --- |
+| `/ketchup` reply | One visual of at most four status boxes, then each action item as a before and after in a visual. Words inside visuals counted toward the 150. | Pictures first: the screenshots and videos the work produced, embedded inline, then any diagram that explains a change, then one short bullet per thing the user asked for. Action items are plain bullets, and a choice gets its options compared after the list, under its screenshots when they already show them. Visuals no longer count toward the 150 words, and a status list is never drawn as boxes. | pstack #628 |
+
 ## 2.0.0-rc.3 - One installer and doctor for Claude Code and Codex, a trusted Codex hook, and one sheet per machine
 
 `npx -y github:chhoumann/t3-pstack install` installs or updates t3-pstack in every Claude Code and Codex home T3 can run, and `doctor` checks them. The homes are `~/.claude` and `~/.codex`, `CLAUDE_CONFIG_DIR` and `CODEX_HOME`, each `claudeAgent` and `codex` provider instance in T3's `${T3CODE_HOME:-~/.t3}/userdata/settings.json`, disabled ones included, and any home named with `--claude-home` or `--codex-home`. Each step converges, so a second run changes nothing. Each home's `t3-pstack` marketplace must come from `chhoumann/t3-pstack` or from the run's `--source`. A home whose marketplace has another source, a counterfeit or a local `--source` from an earlier run, gets nothing installed and no hook trusted, and `doctor` fails it with that source.
