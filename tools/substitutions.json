@@ -464,16 +464,6 @@
       "rationale": "Per-skill notes: arena (t3-pstack 1.0.2: the cross-judge never scores its own candidate)"
     },
     {
-      "pattern": "Fan out N parallel cloud workers.",
-      "replacement": "Fan out N parallel workers.",
-      "rationale": "no cloud workers on T3"
-    },
-    {
-      "pattern": "not the cloud concurrency limit.",
-      "replacement": "not the number that run at once.",
-      "rationale": "no cloud workers on T3"
-    },
-    {
       "pattern": "For `auto` or `inherit-parent`, omit `model` so the workers run on the parent model.",
       "replacement": "For `auto` or `inherit-parent`, omit `target` so the workers run on the parent model.",
       "rationale": "The sheet"
