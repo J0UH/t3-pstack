@@ -104,9 +104,9 @@ git worktree list --porcelain | awk '/^worktree /{print $2}' | while read -r wt;
 	# real signal; merge-base only catches fast-forward/rebase merges.
 	git merge-base --is-ancestor "$head" "$base" 2>/dev/null && merged=YES || merged=no
 
-	# Distinguish real WIP (tracked edits) from untracked scratch. Ignored paths
-	# outside $disposable count too: `git worktree remove` deletes them without
-	# asking, and a .env or .claude/settings.local.json may exist nowhere else.
+	# Count tracked edits (wip), untracked scratch, and ignored paths outside
+	# $disposable. `git worktree remove` deletes ignored files without asking,
+	# and a .env or .claude/settings.local.json may exist nowhere else.
 	porcelain=$(git -C "$wt" status --porcelain --ignored=matching 2>/dev/null)
 	wip=$(printf '%s\n' "$porcelain" | grep -cvE '^(\?\?|!!) |^$')
 	scratch=$(printf '%s\n' "$porcelain" | grep -c '^?? ')
@@ -148,7 +148,8 @@ git worktree list --porcelain | awk '/^worktree /{print $2}' | while read -r wt;
 	fi
 	recent=$([ "$last_ts" -gt 0 ] 2>/dev/null && [ $(( (now - last_ts) / 86400 )) -le 4 ] && echo yes || echo no)
 
-	case "$dirty" in wip:*) bucket=hold-wip ;; *reflog:*) bucket=hold-reflog ;; *ignored:*) bucket=hold-ignored ;; *)
+	case "$dirty" in wip:*) bucket=hold-wip ;; scratch:*) bucket=hold-scratch ;;
+	*reflog:*) bucket=hold-reflog ;; *ignored:*) bucket=hold-ignored ;; *)
 		case "$pr" in */open|*/draft) bucket=hold-open-pr ;; *)
 			if [ "$recent" = yes ]; then bucket=verify-recent-chat
 			elif [ "$merged" = YES ] || [ "$pr" != "-" ]; then bucket=safe

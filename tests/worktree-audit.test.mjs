@@ -133,6 +133,14 @@ test("an ignored file outside build and cache directories holds the worktree, ig
   expect([rows.deps.dirty, rows.deps.bucket]).toEqual(["clean", "safe"]);
 });
 
+test("untracked scratch holds the worktree, since a plain git worktree remove refuses it", () => {
+  const fixture = createFixture();
+  const notes = addWorktree(fixture, "notes");
+  writeFileSync(join(notes, "notes.md"), "run log\n");
+  const rows = runAudit(fixture);
+  expect([rows.notes.dirty, rows.notes.bucket]).toEqual(["scratch:1", "hold-scratch"]);
+});
+
 test("a commit only the worktree's HEAD reflog reaches holds it, a rebased branch's old tip does not", () => {
   const fixture = createFixture();
   const detached = addWorktree(fixture, "detached", "--detach");
