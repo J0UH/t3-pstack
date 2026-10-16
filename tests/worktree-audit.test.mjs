@@ -1,6 +1,3 @@
-// poteto-mode's worktree-audit.sh reads PR state from Origin's CLI when it
-// can and from gh otherwise. Most hosts have no Origin CLI, so the gh path is
-// the one that runs: here it gets a PATH with a fake gh and no origin at all.
 import { afterEach, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
@@ -46,8 +43,6 @@ function commit(cwd, name) {
   git(cwd, "commit", "-q", "-m", name);
 }
 
-// A repo whose main is pushed to a bare origin, and a bin directory holding
-// only the tools the audit runs, so no gh or origin CLI is on PATH.
 function createFixture() {
   const root = mkdtempSync(join(tmpdir(), "worktree-audit-"));
   roots.push(root);
@@ -70,7 +65,6 @@ function addWorktree({ root, repo }, name, ...flags) {
   return tree;
 }
 
-// The audit's rows keyed by worktree directory name.
 function runAudit({ root, repo, bin }, ...args) {
   const result = spawnSync(Bun.which("bash"), [audit, ...args, repo], {
     encoding: "utf8",
@@ -91,6 +85,9 @@ function runAudit({ root, repo, bin }, ...args) {
   );
 }
 
+// The audit reads PR state from Origin's CLI when it can and from gh otherwise.
+// Most hosts have no Origin CLI, so the gh path is the one that runs: here it
+// gets a PATH with a fake gh and no origin at all.
 test("fills the PR column from gh when no origin command is on PATH", () => {
   const fixture = createFixture();
   for (const branch of ["shipped", "in-review", "no-pr"]) commit(addWorktree(fixture, branch), branch);
@@ -133,29 +130,91 @@ test("an ignored file outside build and cache directories holds the worktree, ig
   expect([rows.deps.dirty, rows.deps.bucket]).toEqual(["clean", "safe"]);
 });
 
-test("untracked scratch holds the worktree, since a plain git worktree remove refuses it", () => {
+test("untracked scratch holds the worktree, and tracked edits beside it print both counts", () => {
   const fixture = createFixture();
   const notes = addWorktree(fixture, "notes");
   writeFileSync(join(notes, "notes.md"), "run log\n");
+  const both = addWorktree(fixture, "both");
+  writeFileSync(join(both, "base.txt"), "edited\n");
+  writeFileSync(join(both, "notes.md"), "run log\n");
   const rows = runAudit(fixture);
+  expect([rows.notes.dirty, rows.notes.bucket]).toEqual(["scratch:1", "hold-scratch"]);
+  expect([rows.both.dirty, rows.both.bucket]).toEqual(["wip:1,scratch:1", "hold-wip"]);
+});
+
+test("an ignored file inside a tracked directory named build still holds the worktree", () => {
+  const fixture = createFixture();
+  mkdirSync(join(fixture.repo, "build"));
+  commit(join(fixture.repo, "build"), "run");
+  git(fixture.repo, "push", "-q", "origin", "main");
+  writeFileSync(join(fixture.repo, ".git/info/exclude"), ".env\n");
+  writeFileSync(join(addWorktree(fixture, "tracked-build"), "build/.env"), "TOKEN=only-here\n");
+  const rows = runAudit(fixture);
+  expect([rows["tracked-build"].dirty, rows["tracked-build"].bucket]).toEqual(["ignored:1", "hold-ignored"]);
+});
+
+test("a worktree git cannot read holds instead of reading clean", () => {
+  const fixture = createFixture();
+  const broken = addWorktree(fixture, "broken");
+  writeFileSync(git(broken, "rev-parse", "--path-format=absolute", "--git-path", "index").trim(), "not an index\n");
+  const rows = runAudit(fixture);
+  expect([rows.broken.dirty, rows.broken.bucket]).toEqual(["unknown", "hold-wip"]);
+});
+
+test("a status.showUntrackedFiles=no config hides neither scratch nor ignored files from the audit", () => {
+  const fixture = createFixture();
+  writeFileSync(join(fixture.repo, ".git/info/exclude"), ".env\n");
+  git(fixture.repo, "config", "status.showUntrackedFiles", "no");
+  writeFileSync(join(addWorktree(fixture, "secrets"), ".env"), "TOKEN=only-here\n");
+  writeFileSync(join(addWorktree(fixture, "notes"), "notes.md"), "run log\n");
+  const rows = runAudit(fixture);
+  expect([rows.secrets.dirty, rows.secrets.bucket]).toEqual(["ignored:1", "hold-ignored"]);
   expect([rows.notes.dirty, rows.notes.bucket]).toEqual(["scratch:1", "hold-scratch"]);
 });
 
-test("a commit only the worktree's HEAD reflog reaches holds it, a rebased branch's old tip does not", () => {
+test("a commit only the worktree's HEAD reflog reaches holds it, a rebased branch's old tip does not, even parked at HEAD", () => {
   const fixture = createFixture();
   const detached = addWorktree(fixture, "detached", "--detach");
   commit(detached, "detached work");
   git(detached, "checkout", "-q", "--detach", "origin/main");
   const rebased = addWorktree(fixture, "rebased");
   commit(rebased, "feature");
+  const oldTip = git(rebased, "rev-parse", "HEAD").trim();
   const landed = addWorktree(fixture, "landed");
   commit(landed, "trunk moves");
   git(landed, "push", "-q", "origin", "HEAD:main");
   git(rebased, "rebase", "-q", "origin/main");
   git(rebased, "push", "-q", "origin", "HEAD:main");
+  const parked = join(fixture.root, "parked");
+  git(fixture.repo, "worktree", "add", "-q", "--detach", parked, oldTip);
+  git(parked, "reflog", "expire", "--expire=now", "HEAD");
   const rows = runAudit(fixture);
   expect([rows.detached.merged, rows.detached.dirty, rows.detached.bucket]).toEqual(["YES", "reflog:1", "hold-reflog"]);
   expect([rows.rebased.merged, rows.rebased.dirty, rows.rebased.bucket]).toEqual(["YES", "clean", "safe"]);
+  expect(rows.parked.dirty).toBe("clean");
+});
+
+test("a detached commit HEAD still points at holds the worktree after its reflog expires", () => {
+  const fixture = createFixture();
+  const old = addWorktree(fixture, "old", "--detach");
+  commit(old, "old work");
+  git(old, "reflog", "expire", "--expire=now", "HEAD");
+  const rows = runAudit(fixture);
+  expect([rows.old.dirty, rows.old.bucket]).toEqual(["reflog:1", "hold-reflog"]);
+});
+
+test("a HEAD reflog walk that fails holds the worktree instead of reading clean", () => {
+  const fixture = createFixture();
+  const detached = addWorktree(fixture, "detached", "--detach");
+  commit(detached, "detached work");
+  commit(detached, "more work");
+  const tip = git(detached, "rev-parse", "HEAD").trim();
+  git(detached, "checkout", "-q", "--detach", "origin/main");
+  const object = join(fixture.repo, ".git/objects", tip.slice(0, 2), tip.slice(2));
+  chmodSync(object, 0o644);
+  writeFileSync(object, "corrupt\n");
+  const rows = runAudit(fixture);
+  expect([rows.detached.dirty, rows.detached.bucket]).toEqual(["reflog:?", "hold-reflog"]);
 });
 
 test("the audit writes nothing to the repository unless --fetch is given", () => {
@@ -188,10 +247,25 @@ test("the generator check rejects a playbook that force-removes a worktree or de
   writeFileSync(join(root, "skills/poteto-mode/SKILL.md"), "---\nname: poteto-mode\n---\n");
   writeFileSync(
     join(playbooks, "worktree-cleanup.md"),
-    "5. Prune. Per path, `git worktree remove --force <path>`.\nIf the dir survives, `rm -rf` it.\n",
+    [
+      "5. Prune. Per path, `git worktree remove --force <path>`.",
+      "If the dir survives, `rm -rf` it.",
+      "A locked one takes `git worktree remove -ff <path>`.",
+      "Or `rm -r -f <path>`.",
+      "Then `git -C <path> clean -fdx` drops what is left.",
+      "Or `rm -f -r <path>`.",
+      "Or `git -C <path> clean -e keep -fdx`.",
+      "Delete approved scratch with `git -C <path> clean -fd -- <file>`.",
+      "Untrack a directory with `git -C <path> rm -r --cached <dir>`.",
+      "Then `git worktree prune` drops stale entries.",
+    ].join("\n"),
   );
-  expect(() => validatePluginLayout(root)).toThrow(
-    /worktree-cleanup\.md:1: .*worktree remove --force[\s\S]*worktree-cleanup\.md:2: .*rm -rf/,
-  );
+  let message = "";
+  try {
+    validatePluginLayout(root);
+  } catch (err) {
+    message = err.message;
+  }
+  expect([...message.matchAll(/worktree-cleanup\.md:(\d+):/g)].map((hit) => Number(hit[1]))).toEqual([1, 2, 3, 4, 5, 6, 7, 10]);
   expect(() => validatePluginLayout(pluginRoot)).not.toThrow();
 });

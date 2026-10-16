@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Worktree prune audit, read-only unless --fetch is given. Classifies every git
 # worktree by size, merge state, uncommitted work, ignored files outside build
-# and cache directories, commits only its HEAD reflog reaches, remote/PR state,
-# and the most recent chat that operated in it. Emits a table sorted by size
-# with a suggested bucket. Never deletes anything; deletion stays a human-gated
-# step in the playbook.
+# and cache directories, commits only its HEAD or HEAD reflog reaches,
+# remote/PR state, and the most recent chat that operated in it. Emits a table
+# sorted by size with a suggested bucket. Never deletes anything; deletion stays
+# a human-gated step in the playbook.
 #
 # Usage: worktree-audit.sh [-b|--base <ref>] [--fetch] [repo-path]
 #   repo-path defaults to the current repo.
@@ -46,10 +46,9 @@ if [ -z "$base" ]; then
 	echo "warn: no -b given; MERGED checks against $base" >&2
 fi
 
-# The base drives the merge check. --fetch is best-effort (stale is fine for a
-# first pass, it only marks fewer worktrees merged) and runs before the check,
-# since -b may name a branch not fetched yet. The explicit refspec creates it
-# even in a single-branch clone.
+# The base drives the merge check. --fetch is best-effort (stale is fine for
+# a first pass) and runs before the check, since -b may name a branch not
+# fetched yet. The explicit refspec creates it even in a single-branch clone.
 if [ -n "$fetch" ]; then
 	case "$base" in
 	origin/*) git fetch origin "+refs/heads/${base#origin/}:refs/remotes/$base" --quiet 2>/dev/null \
@@ -59,15 +58,12 @@ fi
 git rev-parse --verify --quiet "$base^{commit}" >/dev/null 2>&1 \
 	|| { echo "error: base ref not found: $base; --fetch fetches an origin/* base" >&2; exit 1; }
 
-# An ignored path under one of these names is a rebuildable build or cache
-# artifact. Any other ignored path, such as .env, may exist nowhere else.
 disposable='(\.build|\.cache|\.dart_tool|\.DS_Store|\.gradle|\.lake|\.lycheecache|\.mypy_cache|\.next|\.nuxt'
 disposable+='|\.parcel-cache|\.pytest_cache|\.ruff_cache|\.svelte-kit|\.tox|\.turbo|\.venv|__pycache__|build'
 disposable+='|coverage|DerivedData|dist|node_modules|target|venv)'
 
-# Commits a branch reflog lists, negated for rev-list. Branch reflogs live in
-# the shared logs and outlive a worktree, so a rebased branch's old tip is not
-# lost with it.
+# Branch reflogs live in the shared logs and outlive a worktree, so a rebased
+# branch's old tip is not lost with it.
 branch_logged=$(git rev-list --walk-reflogs --branches 2>/dev/null | awk '!seen[$0]++ { print "^" $0 }')
 
 # PR state by branch, fetched once as [{number, state, head}] with a lowercase
@@ -104,25 +100,27 @@ git worktree list --porcelain | awk '/^worktree /{print $2}' | while read -r wt;
 	# real signal; merge-base only catches fast-forward/rebase merges.
 	git merge-base --is-ancestor "$head" "$base" 2>/dev/null && merged=YES || merged=no
 
-	# Count tracked edits (wip), untracked scratch, and ignored paths outside
-	# $disposable. `git worktree remove` deletes ignored files without asking,
-	# and a .env or .claude/settings.local.json may exist nowhere else.
-	porcelain=$(git -C "$wt" status --porcelain --ignored=matching 2>/dev/null)
-	wip=$(printf '%s\n' "$porcelain" | grep -cvE '^(\?\?|!!) |^$')
-	scratch=$(printf '%s\n' "$porcelain" | grep -c '^?? ')
-	ignored=$(printf '%s\n' "$porcelain" | grep '^!! ' | grep -cvE "^!! \"?(.*/)?$disposable(/|\"?\$)")
+	# `git worktree remove` deletes ignored files without asking, and a .env or
+	# .claude/settings.local.json may exist nowhere else. An explicit
+	# --untracked-files beats a status.showUntrackedFiles=no config, which would
+	# hide scratch and make --ignored fail.
+	dirty=""
+	if porcelain=$(git -C "$wt" status --porcelain --untracked-files=normal --ignored=matching 2>/dev/null); then
+		wip=$(printf '%s\n' "$porcelain" | grep -cvE '^(\?\?|!!) |^$')
+		scratch=$(printf '%s\n' "$porcelain" | grep -c '^?? ')
+		ignored=$(printf '%s\n' "$porcelain" | grep '^!! ' | grep -cvE "^!! \"?(.*/)?$disposable/?\"?\$")
+		[ "$wip" -gt 0 ] && dirty="wip:$wip"
+		[ "$scratch" -gt 0 ] && dirty="${dirty:+$dirty,}scratch:$scratch"
+		[ "$ignored" -gt 0 ] && dirty="${dirty:+$dirty,}ignored:$ignored"
+	else dirty=unknown; fi
 
-	# Commits only this worktree's HEAD reflog reaches, such as work committed
-	# on a detached HEAD. Removing the worktree deletes that reflog, which
-	# leaves them for gc. --not before --stdin leaves stdin's revisions as given.
-	orphans=$({ git -C "$wt" rev-list --walk-reflogs HEAD 2>/dev/null; printf '%s\n' "$branch_logged"; } \
-		| git -C "$wt" rev-list --count --not --branches --tags --remotes --stdin 2>/dev/null)
-
-	if [ "$wip" -gt 0 ]; then dirty="wip:$wip"
-	elif [ "$scratch" -gt 0 ]; then dirty="scratch:$scratch"
-	else dirty=""; fi
-	[ "$ignored" -gt 0 ] && dirty="${dirty:+$dirty,}ignored:$ignored"
-	[ "${orphans:-0}" -gt 0 ] && dirty="${dirty:+$dirty,}reflog:$orphans"
+	# Removing the worktree deletes its HEAD reflog, which leaves commits only
+	# HEAD or that reflog reaches for gc. --not before --stdin leaves stdin's
+	# revisions as given, and --stdin stops at the first blank line.
+	reflog_only=$(head_log=$(git -C "$wt" rev-list --walk-reflogs HEAD 2>/dev/null) \
+		&& printf '%s\n' "$head" "$head_log" "$branch_logged" | grep . \
+		| git -C "$wt" rev-list --count --not --branches --tags --remotes --stdin 2>/dev/null) || reflog_only='?'
+	[ "$reflog_only" != 0 ] && dirty="${dirty:+$dirty,}reflog:$reflog_only"
 	[ -z "$dirty" ] && dirty=clean
 
 	branch=$(git -C "$wt" symbolic-ref --quiet --short HEAD 2>/dev/null || echo "")
@@ -148,7 +146,7 @@ git worktree list --porcelain | awk '/^worktree /{print $2}' | while read -r wt;
 	fi
 	recent=$([ "$last_ts" -gt 0 ] 2>/dev/null && [ $(( (now - last_ts) / 86400 )) -le 4 ] && echo yes || echo no)
 
-	case "$dirty" in wip:*) bucket=hold-wip ;; scratch:*) bucket=hold-scratch ;;
+	case "$dirty" in wip:*|unknown*) bucket=hold-wip ;; scratch:*) bucket=hold-scratch ;;
 	*reflog:*) bucket=hold-reflog ;; *ignored:*) bucket=hold-ignored ;; *)
 		case "$pr" in */open|*/draft) bucket=hold-open-pr ;; *)
 			if [ "$recent" = yes ]; then bucket=verify-recent-chat

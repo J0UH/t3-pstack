@@ -153,10 +153,12 @@ export function agentSkills(skillsDir) {
   return skills;
 }
 
-// A worktree removed by force or by hand loses its untracked and ignored files
-// (cursor/plugins#449), so no playbook may prescribe either. A plain
-// `git worktree remove` that refuses is the stop.
-const UNSAFE_REMOVAL = /\bworktree\s+remove\b[^`\n]*\s(?:--force|-f)\b|\brm\s+-(?:[rR]f|f[rR])\b/;
+// A worktree removed by force or by hand, or cleaned with git clean -x, loses
+// its untracked or ignored files (cursor/plugins#449), and git worktree prune
+// drops every prunable worktree's HEAD reflog at once, so no playbook may
+// prescribe any of them.
+const UNSAFE_REMOVAL =
+  /\bworktree\s+remove\b[^`\n]*\s(?:--force|-f+)\b|\bworktree\s+prune\b|(?<!\bgit\b[^`\n]*\s)\brm\b[^`\n]*\s(?:-[a-zA-Z]*[rR]|--recursive)|\bclean\b[^`\n]*\s-[a-zA-Z]*[xX]/;
 
 // Layout invariants that live outside any one skill.
 export function validatePluginLayout(pluginRoot) {
@@ -193,7 +195,7 @@ export function validatePluginLayout(pluginRoot) {
   }
   if (unsafe.length) {
     throw new Error(
-      `a playbook force-removes a worktree or deletes one by hand; prune with a plain git worktree remove and stop when it refuses:\n${unsafe.join("\n")}`,
+      `a playbook force-removes a worktree, deletes one by hand, cleans ignored files, or prunes worktrees in bulk; prune with a plain git worktree remove and stop when it refuses:\n${unsafe.join("\n")}`,
     );
   }
 }
