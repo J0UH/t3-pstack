@@ -153,6 +153,11 @@ export function agentSkills(skillsDir) {
   return skills;
 }
 
+// A worktree removed by force or by hand loses its untracked and ignored files
+// (cursor/plugins#449), so no playbook may prescribe either. A plain
+// `git worktree remove` that refuses is the stop.
+const UNSAFE_REMOVAL = /\bworktree\s+remove\b[^`\n]*\s(?:--force|-f)\b|\brm\s+-(?:[rR]f|f[rR])\b/;
+
 // Layout invariants that live outside any one skill.
 export function validatePluginLayout(pluginRoot) {
   if (!existsSync(join(pluginRoot, "skills", ROUTED_SKILL, "SKILL.md"))) {
@@ -171,16 +176,25 @@ export function validatePluginLayout(pluginRoot) {
   // tools/sync.mjs writes an unresolved three-way merge with git's markers and
   // still advances the pin, so this check is what keeps it out of a release.
   const markers = [];
+  const unsafe = [];
   for (const file of walk(pluginRoot)) {
     if (!lstatSync(file).isFile()) continue;
     const raw = readFileSync(file);
     if (raw.includes(0)) continue;
+    const rel = relative(pluginRoot, file);
+    const playbook = /(^|[\\/])playbooks[\\/][^\\/]+\.md$/.test(rel);
     raw.toString("utf8").split("\n").forEach((line, i) => {
-      if (/^(<{7}|\|{7}|={7}|>{7})( |$)/.test(line)) markers.push(`${relative(pluginRoot, file)}:${i + 1}: ${line}`);
+      if (/^(<{7}|\|{7}|={7}|>{7})( |$)/.test(line)) markers.push(`${rel}:${i + 1}: ${line}`);
+      if (playbook && UNSAFE_REMOVAL.test(line)) unsafe.push(`${rel}:${i + 1}: ${line}`);
     });
   }
   if (markers.length) {
     throw new Error(`unresolved sync conflict markers; resolve each hunk by hand:\n${markers.join("\n")}`);
+  }
+  if (unsafe.length) {
+    throw new Error(
+      `a playbook force-removes a worktree or deletes one by hand; prune with a plain git worktree remove and stop when it refuses:\n${unsafe.join("\n")}`,
+    );
   }
 }
 
