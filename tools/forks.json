@@ -24,6 +24,12 @@
       "since": "2.0.0-rc.2",
       "upstream": "not-proposed"
     },
+    "plugins/pstack/skills/poteto-mode/playbooks/worktree-cleanup.md": {
+      "kind": "policy",
+      "why": "Prunes with a plain git worktree remove whose refusal is the stop, never a force flag or a hand delete, as sergchil/jutsu da94424 does, pauses on untracked scratch and deletes only the paths the user approves with a literal-pathspec git clean, names the ignored, reflog, and unknown labels the audit adds with the status call it counts from, reads a prunable worktree's HEAD and reflog from the main checkout instead of a bulk prune, and documents the audit's --fetch.",
+      "since": "2.0.0-rc.7",
+      "upstream": "https://github.com/cursor/plugins/issues/449"
+    },
     "plugins/pstack/skills/poteto-mode/scripts/watch-pr/cli.test.ts": {
       "kind": "port-feature",
       "why": "Expects the --settle default that cli.ts adds.",
@@ -71,6 +77,12 @@
       "why": "Adds the settle state, decision, and reader method that settle.ts defines, and the review-required and merge-blocked gates, the no-checks read and CI state, and the confirming-block wait and timeout reason that the fixes from Michael Denyer's pstack-claude add.",
       "since": "2.0.0-rc.1",
       "upstream": "not-proposed"
+    },
+    "plugins/pstack/skills/poteto-mode/scripts/worktree-audit.sh": {
+      "kind": "policy",
+      "why": "Holds a worktree with untracked scratch, with an ignored file whose last component is not a named build or cache directory, with a commit only HEAD or its reflog reaches, or that git cannot read, the ignored and reflog checks ported from Michael Denyer's pstack-claude #277, passes --untracked-files so a status.showUntrackedFiles=no config hides nothing, fetches the base only under --fetch, and sets GIT_OPTIONAL_LOCKS=0 so its git status never rewrites a worktree's index.",
+      "since": "2.0.0-rc.7",
+      "upstream": "https://github.com/cursor/plugins/issues/449"
     },
     "plugins/pstack/skills/setup-pstack/SKILL.md": {
       "kind": "port-feature",

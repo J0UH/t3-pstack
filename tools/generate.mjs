@@ -153,6 +153,13 @@ export function agentSkills(skillsDir) {
   return skills;
 }
 
+// A worktree removed by force or by hand, or cleaned with git clean -x, loses
+// its untracked or ignored files (cursor/plugins#449), and git worktree prune
+// drops every prunable worktree's HEAD reflog at once, so no playbook may
+// prescribe any of them.
+const UNSAFE_REMOVAL =
+  /\bworktree\s+remove\b[^`\n]*\s(?:--force|-f+)\b|\bworktree\s+prune\b|(?<!\bgit\s|\bgit\s+-C\s+[^\s`;&|]+\s)\brm\b[^`\n]*\s(?:-[a-zA-Z]*[rR]|--recursive)|\bclean\b[^`\n]*\s-[a-zA-Z]*[xX]/;
+
 // Layout invariants that live outside any one skill.
 export function validatePluginLayout(pluginRoot) {
   if (!existsSync(join(pluginRoot, "skills", ROUTED_SKILL, "SKILL.md"))) {
@@ -171,16 +178,25 @@ export function validatePluginLayout(pluginRoot) {
   // tools/sync.mjs writes an unresolved three-way merge with git's markers and
   // still advances the pin, so this check is what keeps it out of a release.
   const markers = [];
+  const unsafe = [];
   for (const file of walk(pluginRoot)) {
     if (!lstatSync(file).isFile()) continue;
     const raw = readFileSync(file);
     if (raw.includes(0)) continue;
+    const rel = relative(pluginRoot, file);
+    const playbook = /(^|[\\/])playbooks[\\/][^\\/]+\.md$/.test(rel);
     raw.toString("utf8").split("\n").forEach((line, i) => {
-      if (/^(<{7}|\|{7}|={7}|>{7})( |$)/.test(line)) markers.push(`${relative(pluginRoot, file)}:${i + 1}: ${line}`);
+      if (/^(<{7}|\|{7}|={7}|>{7})( |$)/.test(line)) markers.push(`${rel}:${i + 1}: ${line}`);
+      if (playbook && UNSAFE_REMOVAL.test(line)) unsafe.push(`${rel}:${i + 1}: ${line}`);
     });
   }
   if (markers.length) {
     throw new Error(`unresolved sync conflict markers; resolve each hunk by hand:\n${markers.join("\n")}`);
+  }
+  if (unsafe.length) {
+    throw new Error(
+      `a playbook force-removes a worktree, deletes one by hand, cleans ignored files, or prunes worktrees in bulk; prune with a plain git worktree remove and stop when it refuses:\n${unsafe.join("\n")}`,
+    );
   }
 }
 
