@@ -259,6 +259,8 @@ test("the generator check rejects a playbook that force-removes a worktree or de
       "Untrack a directory with `git -C <path> rm -r --cached <dir>`.",
       "Then `git worktree prune` drops stale entries.",
       "If git refuses, rm -rf the directory.",
+      "Run `git -C <path>` rm -rf it.",
+      "Or `git -C x; rm -rf y`.",
     ].join("\n"),
   );
   let message = "";
@@ -267,6 +269,6 @@ test("the generator check rejects a playbook that force-removes a worktree or de
   } catch (err) {
     message = err.message;
   }
-  expect([...message.matchAll(/worktree-cleanup\.md:(\d+):/g)].map((hit) => Number(hit[1]))).toEqual([1, 2, 3, 4, 5, 6, 7, 10, 11]);
+  expect([...message.matchAll(/worktree-cleanup\.md:(\d+):/g)].map((hit) => Number(hit[1]))).toEqual([1, 2, 3, 4, 5, 6, 7, 10, 11, 12, 13]);
   expect(() => validatePluginLayout(pluginRoot)).not.toThrow();
 });
