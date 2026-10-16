@@ -158,7 +158,7 @@ export function agentSkills(skillsDir) {
 // drops every prunable worktree's HEAD reflog at once, so no playbook may
 // prescribe any of them.
 const UNSAFE_REMOVAL =
-  /\bworktree\s+remove\b[^`\n]*\s(?:--force|-f+)\b|\bworktree\s+prune\b|(?<!\bgit\b[^`\n]*\s)\brm\b[^`\n]*\s(?:-[a-zA-Z]*[rR]|--recursive)|\bclean\b[^`\n]*\s-[a-zA-Z]*[xX]/;
+  /\bworktree\s+remove\b[^`\n]*\s(?:--force|-f+)\b|\bworktree\s+prune\b|(?<!\bgit\s|\bgit\s+-C\s+\S+\s)\brm\b[^`\n]*\s(?:-[a-zA-Z]*[rR]|--recursive)|\bclean\b[^`\n]*\s-[a-zA-Z]*[xX]/;
 
 // Layout invariants that live outside any one skill.
 export function validatePluginLayout(pluginRoot) {
