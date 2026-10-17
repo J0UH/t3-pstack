@@ -2,6 +2,15 @@
 
 This file is the release changelog, with one `## <version> - <title>` entry per release, newest first. The Cursor-to-T3 rewrite rules live in [`tools/substitutions.json`](tools/substitutions.json), and the [sync boundary](CONTRIBUTING.md#the-sync-boundary) in `CONTRIBUTING.md` defines how a change to upstream's skill content is declared.
 
+## 2.0.0-rc.8 - Lauren's `0317eb8`: a brand comes from a type guard, not `as`
+
+t3-pstack moves to Lauren Tan's pstack at cursor/plugins `0317eb8` for all three components. Only pstack changed upstream, and its version stays 0.15.25. `typescript-best-practices` built its branded-type example with the `as` cast that its own "No `as` casts" row warns against, and now builds it through a type guard ([pstack #700](https://github.com/cursor/plugins/pull/700)). `bun tools/sync.mjs` updated `SKILL.md` and `references/patterns.md` cleanly, and both are byte-identical to upstream's. No substitution or fork names either file, and the 15 declared forks are untouched. [pstack #637](https://github.com/cursor/plugins/pull/637), between the two pins, changed only upstream's README and `docs/harness/claude-code.md`, which the port excludes. #700's copies under `harness/pstack/claude-code/` sit outside every synced component. At `0317eb8` each component's dry run reports no undeclared fork, no denylist hit, and no substitution that matches nothing. Neither hooks file changes.
+
+| Change | 2.0.0-rc.7 | 2.0.0-rc.8 | Source |
+| --- | --- | --- | --- |
+| Branded types rule | Brand primitives with `& { readonly __brand: "X" }` and validate once at the boundary. | Adds that a brand comes from a verifying type guard (`input is AgentId`), never from `as`. | pstack #700 |
+| `parseAgentId` example | Checks `isUUID` and returns `input as AgentId`. | Narrows through an `isAgentId` type guard and returns `input` with no cast. | pstack #700 |
+
 ## 2.0.0-rc.7 - Worktree cleanup keeps ignored files, scratch, and reflog-only commits
 
 Worktree cleanup could destroy work that existed nowhere else, as [cursor/plugins#449](https://github.com/cursor/plugins/issues/449) reports. The audit bucketed a worktree `safe` when it held only untracked scratch or an ignored file such as `.env` or `.claude/settings.local.json`. Step 5 then ran `git worktree remove --force`, and `rm -rf` on any directory that survived. A commit that only the worktree's HEAD reflog reached, such as one made on a detached HEAD, went with the worktree too. Removal deletes that reflog and leaves the commit for `git gc`. The audit also called itself read-only, yet it fetched the base ref ([cursor/plugins#470](https://github.com/cursor/plugins/issues/470)), and its `git status` rewrote the index of each worktree it read. That write can collide with an agent working in the worktree.
