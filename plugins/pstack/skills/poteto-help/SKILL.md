@@ -35,7 +35,7 @@ When the model sheet is missing and it matters, ask whether the user wants to pi
 
 ## Get set up
 
-1. Install t3-pstack per its [README](https://github.com/chhoumann/t3-pstack#readme), once per harness that T3 runs.
+1. Install t3-pstack per its [README](https://github.com/chhoumann/t3-pstack#readme). One `npx -y github:chhoumann/t3-pstack install` run installs it in every Claude Code and Codex config home T3 can run.
 2. Run [`/setup-pstack`](../setup-pstack/SKILL.md). It asks for a reasoning budget, maps a T3 provider and model to each role, and writes the model sheet. The sheet applies to new chats. Then it offers once each to generate a verification skill and a formal verification skill for the project, unless the project already has one.
 3. Start a real task with `/poteto-mode`, a goal, and a check that can pass or fail.
 
@@ -55,7 +55,7 @@ Whether `/poteto-mode` stays on depends on how the user starts it:
 
 - Invoking `/poteto-mode` attaches the skill to one message. It fades as the chat moves on, so start each new task with it.
 - Where the harness runs t3-pstack's session-start hook, each new chat is told when to enter `/poteto-mode` on its own.
-- Skill names differ by harness: `/t3-pstack:poteto-mode` on Claude Code, `$poteto-mode` on Codex. This file writes every skill as `/<name>`.
+- Skill names differ by harness: `/t3-pstack:poteto-mode` on Claude Code, `$t3-pstack:poteto-mode` on Codex. This file writes every skill as `/<name>`.
 
 Mid-chat, "new task" makes the mode match a fresh playbook. `/poteto-mode` already uses `poteto-agent` for the subagents its playbook steps spawn. To get the same style from a subagent of your own, open its `delegate_task` brief the way poteto-mode's Subagents section briefs a `poteto-agent`.
 

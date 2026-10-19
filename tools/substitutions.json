@@ -26,7 +26,7 @@
     },
     {
       "pattern": "1. Install with `/add-plugin pstack` in chat, or from Customize in the sidebar.",
-      "replacement": "1. Install t3-pstack per its [README](https://github.com/chhoumann/t3-pstack#readme), once per harness that T3 runs.",
+      "replacement": "1. Install t3-pstack per its [README](https://github.com/chhoumann/t3-pstack#readme). One `npx -y github:chhoumann/t3-pstack install` run installs it in every Claude Code and Codex config home T3 can run.",
       "rationale": "Cursor's install UI does not exist on T3 (Per-skill notes: poteto-help)",
       "files": "^skills/poteto-help/SKILL\\.md$"
     },
@@ -62,7 +62,7 @@
     },
     {
       "pattern": "- Enter on `/poteto-mode` attaches the skill to one message. It fades as the chat moves on.\n- Option+Enter on Mac or Alt+Enter on Windows, or Use as Mode from the skill entry, makes it a Custom Mode. It stays in context every turn until the user exits the mode, and it stays out of casual turns.\n- Cursor's docs list Custom Modes in the Agents Window and the CLI. Elsewhere, start each new task with `/poteto-mode`.",
-      "replacement": "- Invoking `/poteto-mode` attaches the skill to one message. It fades as the chat moves on, so start each new task with it.\n- Where the harness runs t3-pstack's session-start hook, each new chat is told when to enter `/poteto-mode` on its own.\n- Skill names differ by harness: `/t3-pstack:poteto-mode` on Claude Code, `$poteto-mode` on Codex. This file writes every skill as `/<name>`.",
+      "replacement": "- Invoking `/poteto-mode` attaches the skill to one message. It fades as the chat moves on, so start each new task with it.\n- Where the harness runs t3-pstack's session-start hook, each new chat is told when to enter `/poteto-mode` on its own.\n- Skill names differ by harness: `/t3-pstack:poteto-mode` on Claude Code, `$t3-pstack:poteto-mode` on Codex. This file writes every skill as `/<name>`.",
       "rationale": "harness-specific invocation (Per-skill notes: poteto-help)",
       "files": "^skills/poteto-help/SKILL\\.md$"
     },
