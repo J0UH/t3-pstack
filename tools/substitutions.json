@@ -1,552 +1,1053 @@
 {
   "substitutions": [
     {
+      "pattern": "and mention once that a Custom Mode keeps it on.",
+      "replacement": "and mention once that starting each task with `/poteto-mode` keeps it on.",
+      "rationale": "Custom Modes are Cursor UI (t3-tools Per-skill notes: poteto-help)",
+      "files": "^skills/poteto-help/SKILL\\.md$"
+    },
+    {
       "pattern": "`https://github.com/cursor/plugins/blob/main/pstack/` followed by its path",
-      "replacement": "`https://github.com/michael-denyer/pstack-claude/blob/main/plugins/pstack/` followed by its path",
-      "rationale": "the public copy of a port skill file lives in this repository under plugins/pstack"
+      "replacement": "`https://github.com/chhoumann/t3-pstack/blob/main/plugins/pstack/` followed by its path",
+      "rationale": "the public copy of this port's file (Per-skill notes: poteto-help)",
+      "files": "^skills/poteto-help/SKILL\\.md$"
+    },
+    {
+      "pattern": "- No `~/.cursor/rules/pstack-models.mdc` means `/setup-pstack` hasn't run for this user",
+      "replacement": "- No model sheet (`~/.config/t3-pstack/models.md`, see `/setup-pstack`) means `/setup-pstack` hasn't run for this user",
+      "rationale": "the T3 sheet replaces the Cursor rule (The sheet)",
+      "files": "^skills/poteto-help/SKILL\\.md$"
+    },
+    {
+      "pattern": "When the model rule is missing and it matters",
+      "replacement": "When the model sheet is missing and it matters",
+      "rationale": "the T3 sheet replaces the Cursor rule (The sheet)",
+      "files": "^skills/poteto-help/SKILL\\.md$"
+    },
+    {
+      "pattern": "1. Install with `/add-plugin pstack` in chat, or from Customize in the sidebar.",
+      "replacement": "1. Install t3-pstack per its [README](https://github.com/chhoumann/t3-pstack#readme). One `npx -y github:chhoumann/t3-pstack install` run installs it in every Claude Code and Codex config home T3 can run.",
+      "rationale": "Cursor's install UI does not exist on T3 (Per-skill notes: poteto-help)",
+      "files": "^skills/poteto-help/SKILL\\.md$"
+    },
+    {
+      "pattern": "maps a model to each role, and writes a rule. The rule applies to new chats.",
+      "replacement": "maps a T3 provider and model to each role, and writes the model sheet. The sheet applies to new chats.",
+      "rationale": "the T3 sheet replaces the Cursor rule (The sheet)",
+      "files": "^skills/poteto-help/SKILL\\.md$"
     },
     {
       "pattern": "[README](../../README.md)",
-      "replacement": "[README](https://github.com/michael-denyer/pstack-claude/blob/main/README.md)",
-      "rationale": "upstream's README is excluded and the port's README sits at the repository root, outside the skills tree"
+      "replacement": "[README](https://github.com/chhoumann/t3-pstack/blob/main/README.md)",
+      "rationale": "the port does not carry Lauren's README",
+      "files": "^skills/poteto-help/SKILL\\.md$"
     },
     {
-      "pattern": "repro this with /verify-<app>.",
-      "files": "^skills/poteto-help/",
-      "replacement": "repro this with /verify.",
-      "rationale": "the port's create-verification-skill writes a project skill named verify (#71)"
+      "regex": "\\]\\(\\.\\./\\.\\./docs/guide/",
+      "replacement": "](https://github.com/cursor/plugins/blob/main/pstack/docs/guide/",
+      "rationale": "the port does not carry Lauren's guide, so link its public copy",
+      "files": "^skills/poteto-help/SKILL\\.md$"
     },
     {
-      "pattern": "The system prompt names the workspace's `agent-transcripts/` directory.",
-      "replacement": "Claude Code stores them at `~/.claude/projects/<encoded-cwd>/*.jsonl`, where `<encoded-cwd>` is the workspace's working directory with `/` → `-`.",
-      "rationale": "Claude Code's system prompt does not name a transcripts directory, so the port names the path and its encoding"
+      "pattern": "which saves tokens when the chat runs on Auto or a cheaper model.",
+      "replacement": "which saves tokens when the chat runs on a cheaper model.",
+      "rationale": "Auto is Cursor's model router",
+      "files": "^skills/poteto-help/SKILL\\.md$"
     },
     {
-      "pattern": "Typical flow: in **one** message, run two `Task` calls in parallel — `subagent_type: \"shell\"` and `subagent_type: \"explore\"` — to collect `git diff <base>...HEAD` output and full contents of changed files (default base `main`).",
-      "replacement": "Typical flow: run `git diff <base>...HEAD` (default base `main`) and read the full contents of the changed files, through the `Explore` agent when the set is large.",
-      "rationale": "Claude Code has no shell or explore subagent types; the parent runs git itself and its built-in Explore agent reads bulk; must precede the `Task` rule"
+      "pattern": "pstack is built for Cursor, and it also installs in Claude Code with `/plugin marketplace add cursor/plugins`, then `/plugin install pstack@cursor-plugins`. There, each command takes a `pstack:` prefix, such as `/pstack:poteto-mode`. The [Claude Code adapter](../../docs/harness/claude-code.md) maps the Cursor names, and a step that needs a Cursor-only feature, such as Bugbot or Automations, is skipped with a one-line note.\n\nOther tools can read the skills, because they use the Agent Skills format. But most workflow skills, including `/poteto-mode`, `/how`, `/why`, and `/teach`, spawn Cursor subagents with per-role models, and Custom Modes and `/loop` are Cursor features, so those parts may not work there.",
+      "replacement": "t3-pstack is pstack rewritten for T3 Code, and it installs in Claude Code and Codex with `npx -y github:chhoumann/t3-pstack install`.\n\nIts workflow skills, including `/poteto-mode`, `/how`, `/why`, and `/teach`, dispatch subagents through T3's `delegate_task` with per-role models, so those parts need a T3 thread.",
+      "rationale": "states where the port runs and how it installs (Precedence)",
+      "files": "^skills/poteto-help/SKILL\\.md$"
     },
     {
-      "pattern": "You are a **Task subagent**.",
-      "replacement": "You are an **`Agent` subagent**.",
-      "rationale": "the article changes with the tool name; must precede the Task subagent rule"
+      "pattern": "- Enter on `/poteto-mode` attaches the skill to one message. It fades as the chat moves on.\n- Option+Enter on Mac or Alt+Enter on Windows, or Use as Mode from the skill entry, makes it a Custom Mode. It stays in context every turn until the user exits the mode, and it stays out of casual turns.\n- Cursor's docs list Custom Modes in the Agents Window and the CLI. Elsewhere, start each new task with `/poteto-mode`.",
+      "replacement": "- Invoking `/poteto-mode` attaches the skill to one message. It fades as the chat moves on, so start each new task with it.\n- Where the harness runs t3-pstack's session-start hook, each new chat is told when to enter `/poteto-mode` on its own.\n- Skill names differ by harness: `/t3-pstack:poteto-mode` on Claude Code, `$t3-pstack:poteto-mode` on Codex. This file writes every skill as `/<name>`.",
+      "rationale": "harness-specific invocation (Per-skill notes: poteto-help)",
+      "files": "^skills/poteto-help/SKILL\\.md$"
+    },
+    {
+      "pattern": "Link [Cursor's skills docs](https://cursor.com/docs/skills) when this comes up. ",
+      "replacement": "",
+      "rationale": "Cursor docs do not apply",
+      "files": "^skills/poteto-help/SKILL\\.md$"
+    },
+    {
+      "pattern": "To get the same style from a subagent of your own, spawn it with `subagent_type: \"poteto-agent\"`.",
+      "replacement": "To get the same style from a subagent of your own, open its `delegate_task` brief the way poteto-mode's Subagents section briefs a `poteto-agent`.",
+      "rationale": "persona by brief (Subagent policy)",
+      "files": "^skills/poteto-help/SKILL\\.md$"
+    },
+    {
+      "pattern": "| Run parallel checks over slices, or race workers, as cloud agents |",
+      "replacement": "| Run parallel checks over slices, or race workers, as parallel subagents |",
+      "rationale": "no cloud agents on T3",
+      "files": "^skills/poteto-help/SKILL\\.md$"
+    },
+    {
+      "pattern": "| Build a page whose buttons wake a Grok Bot over a webhook | [`/make-bot-ui`](../make-bot-ui/SKILL.md) |\n",
+      "replacement": "",
+      "rationale": "the port excludes make-bot-ui",
+      "files": "^skills/poteto-help/SKILL\\.md$"
+    },
+    {
+      "pattern": "- `/deslop`, `control-cli`, and `control-ui` ship in the `cursor-team-kit` plugin.\n- `/loop` and `/create-skill` are Cursor built-ins.\n",
+      "replacement": "- `/deslop` ships in this plugin. The team kit's app drivers have no T3 port. The project's verify skill and T3's `preview_*` and `device_*` tools drive apps instead.\n- Loops run through T3's `schedule_task`, and skill authoring through the harness's own skill-authoring skill.\n",
+      "rationale": "team-kit and Cursor built-ins (UI evidence; Tool actions: Schedule)",
+      "files": "^skills/poteto-help/SKILL\\.md$"
+    },
+    {
+      "pattern": "Without `/poteto-mode`, a phrase such as \"babysit this pr\" can start Cursor's own skill for the same job instead. ",
+      "replacement": "",
+      "rationale": "no competing built-in babysit on T3",
+      "files": "^skills/poteto-help/SKILL\\.md$"
+    },
+    {
+      "pattern": "Cursor's Plan Mode works alongside it.",
+      "replacement": "A harness plan mode works alongside it.",
+      "rationale": "Plan Mode is Cursor UI",
+      "files": "^skills/poteto-help/SKILL\\.md$"
+    },
+    {
+      "pattern": "| It was started with Enter. Start it as a Custom Mode, or start each task with `/poteto-mode`. |",
+      "replacement": "| It was attached to one message. Start each task with `/poteto-mode`. |",
+      "rationale": "Custom Modes are Cursor UI",
+      "files": "^skills/poteto-help/SKILL\\.md$"
+    },
+    {
+      "pattern": "| The rule from `/setup-pstack` applies to new chats. Start one. |",
+      "replacement": "| The sheet from `/setup-pstack` applies to new chats. Start one. |",
+      "rationale": "the T3 sheet replaces the Cursor rule",
+      "files": "^skills/poteto-help/SKILL\\.md$"
+    },
+    {
+      "pattern": "| Give each agent its own worktree, or run them as cloud agents, which each get their own machine. |",
+      "replacement": "| Give each agent its own worktree. |",
+      "rationale": "no cloud agents on T3",
+      "files": "^skills/poteto-help/SKILL\\.md$"
+    },
+    {
+      "pattern": "| `/loop` needs a check that can pass or fail, not a duration.",
+      "replacement": "| A scheduled loop needs a check that can pass or fail, not a duration.",
+      "rationale": "loops run through schedule_task (Tool actions: Schedule)",
+      "files": "^skills/poteto-help/SKILL\\.md$"
+    },
+    {
+      "files": "^skills/ketchup/SKILL\\.md$",
+      "pattern": "a chart or diagram from `/visualize`",
+      "replacement": "a chart or diagram rendered with T3's `html_render` after an `html_preview` check",
+      "rationale": "Per-skill notes: ketchup (/visualize is Cursor's; T3 renders pages inline with html_render)"
+    },
+    {
+      "files": "^skills/ketchup/SKILL\\.md$",
+      "pattern": "a `/visualize` chart for numbers",
+      "replacement": "an `html_render` chart for numbers",
+      "rationale": "Per-skill notes: ketchup"
+    },
+    {
+      "files": "^skills/ketchup/SKILL\\.md$",
+      "pattern": "Check the current state of each PR, CI run, or agent this chat touched.",
+      "replacement": "Check the current state of each PR, CI run, or agent this chat touched, with `task_status` for a delegated child and `list_thread_pull_requests` for this thread's PRs.",
+      "rationale": "Per-skill notes: ketchup"
+    },
+    {
+      "pattern": "Bundled skills live at `../<name>/SKILL.md` from this file, so put this file's absolute path in every `poteto-agent` prompt.",
+      "files": "^skills/poteto-mode/SKILL\\.md$",
+      "replacement": "Bundled skills live at `../<name>/SKILL.md` from this file, so put this file's absolute path in every `poteto-agent` prompt.\n\nOn Codex, read this file whole before acting, in a shell call of its own with `max_output_tokens: 10000`. A smaller output budget cuts lines out of its middle. If a read of it shows `tokens truncated`, read it again that way.",
+      "rationale": "Codex's model picks a shell read's output budget, often 3000 to 6000 tokens for a SKILL.md, and Codex 0.162.1 then cuts the middle of anything longer, which here is the Subagents section that holds the T3 dispatch rules. The head of a cut read survives, so the instruction sits there. tests/agent-skills.test.mjs keeps the file inside the 10000-token budget it names."
+    },
+    {
+      "pattern": "- About to `AskQuestion` on a",
+      "replacement": "- About to ask the user a question on a",
+      "rationale": "the rule is about asking, not the tool",
+      "files": "^skills/poteto-mode/SKILL\\.md$"
+    },
+    {
+      "files": "^skills/poteto-mode/SKILL\\.md$",
+      "pattern": "- Contested design → the **interrogate** skill (multi-model adversarial) before shipping.",
+      "replacement": "- Contested design → the **interrogate** skill (multi-model adversarial) before shipping.\n- A Bug fix, Feature, or Refactoring diff → the **interrogate** skill with the `interrogate reviewers` panel before Opening a PR. Skip it only for a mechanical change, such as a rename or a dependency bump, and say so in the reply. Only findings under interrogate's Act on block, `warning` correctness findings included. A nit, or an edge case that cannot occur in practice, never blocks: batch accepted nits into one final fix run or drop them, and give each dismissal its reason. Round 1 reviews the whole change, and each later round reviews only the fix diff. After every fix round, a `feature, refactoring` delegate runs the real artifact and reports `pass`, `fail`, or `could not run` with its evidence. `fail` blocks like an Act on finding. `could not run` is not a pass and starts no fix, so report it. After three fix rounds, stop and report the open findings, what kind of failure they suggest, and a recommendation.",
+      "rationale": "Playbooks: Bug fix, Feature, Refactoring and Review loop (t3-pstack 1.0.1 and 1.0.6: a cross-family review gate with a severity gate and a three-round cap)"
+    },
+    {
+      "pattern": "Agent-facing prose also follows the **create-skill** skill (Cursor's built-in for authoring SKILL.md files).",
+      "replacement": "Agent-facing prose also follows the harness's skill-authoring skill (`skill-creator` where installed, else the Agent Skills format).",
+      "rationale": "create-skill is a Cursor built-in; Codex ships skill-creator",
+      "files": "^skills/poteto-mode/SKILL\\.md$"
+    },
+    {
+      "pattern": "- Shipping UI / IDE / CLI → the matching control skill. `cursor-team-kit` publishes `control-cli` (CLIs and TUIs) and `control-ui` (browser / Electron / web UIs).",
+      "replacement": "- Shipping UI / IDE / CLI → the matching control skill. That is the project's verify skill when it has one (`/create-verification-skill` makes one). Otherwise web UIs run through T3's `preview_*` tools, simulators through T3's `device_*` tools, and CLIs and TUIs through their own commands. The evidence is the artifact, such as a `preview_snapshot` saved with `save: true`, a recording, or the real output.",
+      "rationale": "UI evidence",
+      "files": "^skills/poteto-mode/SKILL\\.md$"
+    },
+    {
+      "pattern": "(`playbooks/babysit.md`), not Cursor's built-in babysit skill, whose description matches the same words.",
+      "replacement": "(`playbooks/babysit.md`).",
+      "rationale": "no competing built-in babysit on T3",
+      "files": "^skills/poteto-mode/SKILL\\.md$"
+    },
+    {
+      "pattern": "**Use `subagent_type: \"poteto-agent\"` for any subagent you spawn inside a playbook step**",
+      "replacement": "**Brief any subagent you spawn inside a playbook step as a `poteto-agent`**",
+      "rationale": "persona by brief (Subagent policy)",
+      "files": "^skills/poteto-mode/SKILL\\.md$"
+    },
+    {
+      "pattern": "set their own `subagent_type` for diverse-model review.",
+      "replacement": "set their own brief and role for diverse-model review.",
+      "rationale": "persona by brief (Subagent policy)",
+      "files": "^skills/poteto-mode/SKILL\\.md$"
+    },
+    {
+      "pattern": "**Defaults for every `Task` call.** `run_in_background: true`, agent mode (readonly strips MCP), file pointers not inlined context, explicit model per role",
+      "replacement": "**Defaults for every `delegate_task` call.** `mode: \"async\"`, full tool access (a read-only child gets \"inspect only, change no file\" in its brief), file pointers not inlined context, an explicit `target` per role",
+      "rationale": "Tool actions: Dispatch; Subagent policy (readonly)",
+      "files": "^skills/poteto-mode/SKILL\\.md$"
+    },
+    {
+      "files": "^skills/poteto-mode/SKILL\\.md$",
+      "pattern": "Use fast mode only when the job is urgent,",
+      "replacement": "Use fast mode, the provider's speed option (`fastMode=true` on Claude, a fast `serviceTier` such as `priority` on Codex), only when the job is urgent,",
+      "rationale": "#613 per-job effort: a T3 entry carries its reasoning and speed as options, not as slug suffixes (The sheet)"
+    },
+    {
+      "files": "^skills/poteto-mode/SKILL\\.md$",
+      "pattern": "Otherwise use standard speed, the same slug without `-fast`.",
+      "replacement": "Otherwise use standard speed, the entry without that option.",
+      "rationale": "#613 per-job effort: a T3 entry carries its reasoning and speed as options, not as slug suffixes (The sheet)"
+    },
+    {
+      "files": "^skills/poteto-mode/SKILL\\.md$",
+      "pattern": "Verification is the exception and stays on the `swarm workers` model and speed (`grok-4.7-xhigh-fast` by default).",
+      "replacement": "Verification is the exception and stays on the `swarm workers` model and speed (default in the **swarm** skill's Models section).",
+      "rationale": "#613 per-job effort: a T3 entry carries its reasoning and speed as options, not as slug suffixes (The sheet)"
+    },
+    {
+      "files": "^skills/poteto-mode/SKILL\\.md$",
+      "pattern": "Change only the effort level and whether the slug is fast,",
+      "replacement": "Change only the entry's reasoning option (`effort` on Claude, `reasoningEffort` on Codex and Grok) and its speed option,",
+      "rationale": "#613 per-job effort: a T3 entry carries its reasoning and speed as options, not as slug suffixes (The sheet)"
+    },
+    {
+      "files": "^skills/poteto-mode/SKILL\\.md$",
+      "pattern": "If the family has no slug at that level and speed, use its nearest slug.",
+      "replacement": "If the model has no value at that level, or no speed option, use its nearest one in `orchestrator_capabilities`.",
+      "rationale": "#613 per-job effort: a T3 entry carries its reasoning and speed as options, not as slug suffixes (The sheet)"
+    },
+    {
+      "files": "^skills/poteto-mode/SKILL\\.md$",
+      "pattern": "rejects the adjusted slug, do not try another adjusted slug.",
+      "replacement": "rejects the adjusted entry, do not try another adjusted entry.",
+      "rationale": "#613 per-job effort: a T3 entry carries its reasoning and speed as options, not as slug suffixes (The sheet)"
+    },
+    {
+      "regex": "Defaults `(?:claude|gpt|grok|gemini|composer)-[^`]+` for code, `(?:claude|gpt|grok|gemini|composer)-[^`]+` for prose and judgment",
+      "replacement": "Role defaults in [Models](#models)",
+      "rationale": "defaults come from the stamped Models section (Model names)",
+      "files": "^skills/poteto-mode/SKILL\\.md$"
+    },
+    {
+      "regex": "strongest judgment model \\(`(?:claude|gpt|grok|gemini|composer)-[^`]+`\\)",
+      "replacement": "strongest judgment model (the `hardest tasks` default in [Models](#models))",
+      "rationale": "defaults come from the stamped Models section (Model names)",
+      "files": "^skills/poteto-mode/SKILL\\.md$"
+    },
+    {
+      "pattern": "Per-role lines in the `/setup-pstack` rule override",
+      "replacement": "Per-role lines in the model sheet that `/setup-pstack` writes override",
+      "rationale": "The sheet",
+      "files": "^skills/poteto-mode/SKILL\\.md$"
+    },
+    {
+      "pattern": "Resume, message, or queue a follow-up on an existing subagent only when",
+      "replacement": "Send a follow-up to an existing child (`t3_thread_send` to its `childThreadId`) only when",
+      "rationale": "Tool actions: Continue a subagent",
+      "files": "^skills/poteto-mode/SKILL\\.md$"
+    },
+    {
+      "pattern": "Interrupt-chained resumes silently drop directives, so fire a fresh subagent with consolidated scope rather than trusting a \"done\" summary.",
+      "replacement": "Interrupt-chained resumes silently drop directives, so fire a fresh subagent with consolidated scope rather than trusting a \"done\" summary.\n\n**Dispatch on T3.** Every subagent is a `delegate_task` call from the chat that runs the playbook, same model family included, so every child shows up in T3. Give each call its own `clientRequestId`, stable across retries of that call, and keep each returned `taskId`. A child's completion wakes this thread, so end the turn instead of polling, and call `task_status` only when a result is needed mid-turn. `task_cancel` stops a child, and `task_status` confirms it stopped. A child gets only its brief, never your context, so pass absolute paths. `<plugin root>` is the absolute path of the directory that holds this plugin's `skills/` and `agents/`. A persona (`poteto-agent`, `comment-sicko`, `thermo-nuclear-review-subagent`, `thermo-nuclear-code-quality-review-subagent`) is a brief that opens with \"Read `<plugin root>/agents/<name>.md` in full and act as it says\", and a `poteto-agent` brief also names this file's absolute path.\n\nA child starts in your checkout. One that writes gets its own worktree, created with `git worktree add` from `HEAD` so it builds on your branch's commits. The brief names that absolute path as the only place it writes, and tells it to run every command there (`workdir` on Codex) and to edit by absolute path. Record your own `git status --porcelain` before you dispatch, check after the result that it is unchanged, then remove the worktree and its branch. A step a playbook says to delegate goes to `delegate_task` on that role's sheet entry, not into your own tool calls, unless you state a reason such as a step too small to brief. A research delegate no role names runs on the `how explorer` entry. A model's family is the first segment of its ID's last `/` part, such as `claude`, `gpt`, or `grok`, whatever provider instance serves it, and your own family is the one in `orchestrator_capabilities`' `inheritedModel`. A rejected target runs on another target of the same family from `orchestrator_capabilities`, and you say so. A required review with no reviewer from another family stays `BLOCKED: independent review`.\n\nEnd every reply that ran a playbook with a dispatch ledger: one line per delegated step, naming the role and the `providerInstanceId/model` it ran on, or `in-thread: <reason>`.",
+      "rationale": "inserts the T3 dispatch policy at the end of the Subagents section (Tool actions; Subagent policy)",
+      "files": "^skills/poteto-mode/SKILL\\.md$"
+    },
+    {
+      "pattern": "from a transcript, cloud-agent URL, or pushed branch.",
+      "replacement": "from a transcript, a T3 thread, or pushed branch.",
+      "rationale": "no cloud agents on T3",
+      "files": "^skills/poteto-mode/SKILL\\.md$"
+    },
+    {
+      "pattern": "Substituting `generalPurpose` skips that read and drifts.",
+      "replacement": "A brief without that read drifts.",
+      "rationale": "persona by brief (Subagent policy)",
+      "files": "^agents/poteto-agent\\.md$"
+    },
+    {
+      "pattern": "With no path, before any other work, search `~/.cursor/plugins/` for a file whose path ends in `skills/poteto-mode/SKILL.md`. If more than one file matches, use the copy whose `.cursor-plugin/plugin.json` has the highest `version`.",
+      "replacement": "With no path, before any other work, search the harness's plugin directory (`~/.claude/plugins/` on Claude Code, `${CODEX_HOME:-~/.codex}/plugins/` on Codex) for a file whose path ends in `skills/poteto-mode/SKILL.md`. If more than one file matches, use the copy whose plugin manifest (`.claude-plugin/plugin.json` or `.codex-plugin/plugin.json`) has the highest `version`.",
+      "rationale": "harness-specific plugin paths",
+      "files": "^agents/poteto-agent\\.md$"
     },
     {
       "pattern": "Invoked via Task after a parent gathers diff and file contents.",
-      "replacement": "Invoked through the `Agent` tool after a parent gathers diff and file contents.",
-      "rationale": "the Task tool is the Agent tool on Claude Code, and the port writes the tool name in backticks"
+      "replacement": "Dispatched through `delegate_task` after a parent gathers diff and file contents.",
+      "rationale": "Tool actions: Dispatch"
     },
     {
-      "pattern": "comments from BugBot or others present",
-      "replacement": "comments from a review bot or others present",
-      "rationale": "the port routes any automated PR-review bot, not only Cursor's Bugbot"
-    },
-    {
-      "pattern": "Flag issues found by BugBot or others",
-      "replacement": "Flag issues found by a review bot or others",
-      "rationale": "the port routes any automated PR-review bot, not only Cursor's Bugbot"
-    },
-    {
-      "pattern": "Incorporate BugBot or human threads",
-      "replacement": "Incorporate review-bot or human threads",
-      "rationale": "the port routes any automated PR-review bot, not only Cursor's Bugbot"
-    },
-    {
-      "pattern": "subagent_type: \"thermo-nuclear-review-subagent\"",
-      "replacement": "subagent_type: \"pstack:thermo-nuclear-review-subagent\"",
-      "rationale": "Claude Code dispatches plugin agents by their namespaced name"
-    },
-    {
-      "pattern": "subagent_type: \"thermo-nuclear-code-quality-review-subagent\"",
-      "replacement": "subagent_type: \"pstack:thermo-nuclear-code-quality-review-subagent\"",
-      "rationale": "Claude Code dispatches plugin agents by their namespaced name"
+      "pattern": "You are a **Task subagent**.",
+      "replacement": "You are a **`delegate_task` child**.",
+      "rationale": "Tool actions: Dispatch"
     },
     {
       "pattern": "(shipped in the Thermos plugin)",
       "replacement": "(shipped in this plugin)",
-      "rationale": "the port carries the thermos skills inside pstack, not as a separate plugin"
+      "rationale": "the port carries thermos inside pstack"
     },
     {
       "pattern": "skill in the Thermos plugin.",
       "replacement": "skill in this plugin.",
-      "rationale": "the port carries the thermos skills inside pstack, not as a separate plugin"
+      "rationale": "the port carries thermos inside pstack"
     },
     {
-      "pattern": "Spawn Comment Sicko, fix",
-      "replacement": "Spawn the comment-sicko subagent, fix",
-      "rationale": "the menu description names the plugin agent by its file name"
+      "pattern": "Typical flow: in **one** message, run two `Task` calls in parallel — `subagent_type: \"shell\"` and `subagent_type: \"explore\"` — to collect `git diff <base>...HEAD` output and full contents of changed files (default base `main`).",
+      "replacement": "Typical flow: run `git diff <base>...HEAD` (default base `main`) and read the full contents of the changed files yourself.",
+      "rationale": "Per-skill notes: thermos (the parent passes the diff)"
     },
     {
-      "pattern": "Spawn `Task` with `subagent_type: \"comment-sicko\"`",
-      "replacement": "Spawn an `Agent` with `subagent_type: \"pstack:comment-sicko\"`",
-      "rationale": "plugin agents register under the plugin namespace by file name (#58); must precede the `Task` rule"
+      "pattern": "Then invoke this agent with `subagent_type: \"thermo-nuclear-review-subagent\"` and a user prompt containing",
+      "replacement": "Then dispatch this agent as one `delegate_task` child whose brief opens with \"Read `<plugin root>/agents/thermo-nuclear-review-subagent.md` in full and act as it says\" and contains",
+      "rationale": "persona by brief (Subagent policy)"
     },
     {
-      "pattern": "Comment Sicko",
-      "files": "^skills/no-comments/",
-      "replacement": "comment-sicko",
-      "rationale": "the agent's registered name is its file name"
+      "pattern": "Then invoke this agent with `subagent_type: \"thermo-nuclear-code-quality-review-subagent\"` and a user prompt containing",
+      "replacement": "Then dispatch this agent as one `delegate_task` child whose brief opens with \"Read `<plugin root>/agents/thermo-nuclear-code-quality-review-subagent.md` in full and act as it says\" and contains",
+      "rationale": "persona by brief (Subagent policy)"
     },
     {
-      "pattern": "No `eval`, `test`, `judge`, `experiment`, `rubric`, `score`, `compare`, `benchmark`, `candidate`, or `arena` in any directory",
-      "replacement": "None of the words eval, test, judge, experiment, rubric, score, compare, benchmark, candidate, or arena in any directory",
-      "rationale": "the Claude plugin directory validator reads a backticked eval as a shell execute pattern and holds the submission (0.9.46, #108)"
+      "pattern": "3. Launch both subagents in the same message with `run_in_background: true`:",
+      "replacement": "3. Launch both subagents in the same response as two `delegate_task` calls with `mode: \"async\"` and `role: \"review\"`, on the first two model families of the `interrogate reviewers` sheet line (`<plugin root>` is the directory that holds this plugin's `skills/`):",
+      "rationale": "Per-skill notes: thermos",
+      "files": "^skills/thermos/SKILL\\.md$"
     },
     {
-      "pattern": "list the available MCPs from the Cursor environment. Use the available-tools map when present. Otherwise inspect the `mcps/` directory Cursor exposes for enabled MCP servers.",
-      "replacement": "list the available MCPs in the Claude Code environment. Use the tool list at the top of the system prompt (every MCP appears as a tool with prefix `mcp__<server>__<name>`). Otherwise read `.mcp.json` in the plugin/project, or run `claude mcp list`.",
-      "rationale": "where Claude Code exposes its MCP servers"
+      "pattern": "   - `subagent_type: \"thermo-nuclear-review-subagent\"` for",
+      "replacement": "   - a brief that opens with \"Read `<plugin root>/agents/thermo-nuclear-review-subagent.md` and `<plugin root>/skills/thermo-nuclear-review/SKILL.md` in full and act as they say\" for",
+      "rationale": "persona by brief (Subagent policy)",
+      "files": "^skills/thermos/SKILL\\.md$"
     },
     {
-      "regex": "default to one each on `(?:claude|gpt|grok|gemini|composer)-[^`]+`(?:(?:,| and|, and) `(?:claude|gpt|grok|gemini|composer)-[^`]+`)*\\.",
+      "pattern": "   - `subagent_type: \"thermo-nuclear-code-quality-review-subagent\"` for",
+      "replacement": "   - a brief that opens with \"Read `<plugin root>/agents/thermo-nuclear-code-quality-review-subagent.md` and `<plugin root>/skills/thermo-nuclear-code-quality-review/SKILL.md` in full and act as they say\" for",
+      "rationale": "persona by brief (Subagent policy)",
+      "files": "^skills/thermos/SKILL\\.md$"
+    },
+    {
+      "pattern": "1. Spawn `Task` with `subagent_type: \"comment-sicko\"`. Pass the scope.",
+      "replacement": "1. Dispatch one `delegate_task` child (`mode: \"async\"`, `role: \"review\"`) whose brief opens with \"Read `<plugin root>/agents/comment-sicko.md` in full and act as it says\" (`<plugin root>` is the directory that holds this plugin's `skills/`). Pass the scope, and no worktree, because a worktree lacks the scope's uncommitted changes.",
+      "rationale": "Per-skill notes: no-comments",
+      "files": "^skills/no-comments/SKILL\\.md$"
+    },
+    {
+      "pattern": "Every spawn is a Task subagent with `subagent_type: generalPurpose` and `readonly: true`.",
+      "replacement": "Every spawn is a `delegate_task` child with `role: \"research\"` and a brief that says to inspect only and change no file.",
+      "rationale": "Per-skill notes: how"
+    },
+    {
+      "pattern": "Set `model` to that line's value, or to the default if the rule or the line is missing. Leave `model` unset when the value is `auto` or `inherit-parent`. If the Task tool rejects a slug, use the default and say so. If it rejects the default, use the closest valid slug of the same family from its error message.",
+      "replacement": "Set `target` from that line's entry, or from the default if the sheet or the line is missing. Leave `target` unset when the value is `auto` or `inherit-parent`. If `delegate_task` rejects an entry, use the default and say so. If it rejects the default, use another target of the same family from `orchestrator_capabilities`.",
+      "rationale": "The sheet; Subagent policy (rejected target)"
+    },
+    {
+      "pattern": "If the Task tool rejects a slug, use the default and say so. If it rejects the default, use the closest valid slug of the same family from its error message.",
+      "replacement": "If `delegate_task` rejects an entry, use the default and say so. If it rejects the default, use another target of the same family from `orchestrator_capabilities`.",
+      "rationale": "Subagent policy (rejected target)"
+    },
+    {
+      "pattern": "Every spawn is `generalPurpose` with `readonly: false` (agent mode). **Do not use readonly/Ask mode.** It strips MCP access, which disables the MCP-backed investigators and the synthesizer's citation spot-checks.",
+      "replacement": "Every spawn is a `delegate_task` child with full tool access, MCP included, which the MCP-backed investigators and the synthesizer's citation spot-checks need.",
+      "rationale": "Per-skill notes: why"
+    },
+    {
+      "pattern": "Before spawning investigators, list the available MCPs from the Cursor environment. Use the available-tools map when present. Otherwise inspect the `mcps/` directory Cursor exposes for enabled MCP servers.",
+      "replacement": "Before spawning investigators, list the MCP servers whose tools this session exposes.",
+      "rationale": "Per-skill notes: why"
+    },
+    {
+      "pattern": "`model`: the `why investigators` line",
+      "replacement": "`target`: the `why investigators` line",
+      "rationale": "The sheet"
+    },
+    {
+      "pattern": "`model`: the `why synthesizer` line",
+      "replacement": "`target`: the `why synthesizer` line",
+      "rationale": "The sheet"
+    },
+    {
+      "pattern": "Before fanning out, find this conversation's transcript in the `agent-transcripts/` directory the system prompt names. Do not glob across `~/.cursor/projects/*/`. That crosses workspace boundaries and reads private chats from unrelated projects.",
+      "replacement": "Before fanning out, find this conversation's own transcript where this thread's host keeps it. Do not search other projects' transcripts. That crosses workspace boundaries and reads private chats from unrelated projects.",
+      "rationale": "Transcripts (t3-pstack 1.0.13: the host's own transcript, found by session or thread ID)"
+    },
+    {
+      "pattern": "```bash\nls -t <agent-transcripts>/*.jsonl <agent-transcripts>/*/*.jsonl <agent-transcripts>/*/subagents/*.jsonl 2>/dev/null | head -10\n```\n\nThat covers the legacy flat (`<id>.jsonl`), current nested (`<id>/<id>.jsonl`), and subagent (`<parent>/subagents/<child>.jsonl`) layouts. For each candidate, read the first JSONL line. Take the file whose `message.content[0].text` contains the conversation's opening user prompt. If none matches, pass a tight digest of the session instead.",
+      "replacement": "On Claude Code, run the finder with this session's ID, this project's transcripts directory, and a fragment of the conversation's opening user prompt:\n\n```bash\nnode \"<plugin root>/skills/reflect/scripts/find-transcript.mjs\" --session \"$CLAUDE_CODE_SESSION_ID\" \"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/<encoded-cwd>\" \"<opening prompt fragment>\"\n```\n\n`<plugin root>` is the directory that holds this plugin's `skills/`, and `<encoded-cwd>` is the working directory with each `/` and `.` turned into `-`. With the session ID set, the finder prints this session's own transcript, and exits 1 when it does not exist, because a scan could return a sibling session that shares the opening prompt. Without it, the finder scans the flat, nested, and subagent layouts newest first and prints the first transcript whose opening typed prompt carries the fragment. Do not reimplement the scan by hand.\n\nOn Codex, pass this thread's ID, which Codex exports as `CODEX_THREAD_ID`, to the resolver, and never search by chat title or time:\n\n```bash\n\"<plugin root>/skills/poteto-mode/scripts/resolve-codex-transcript\" \"$CODEX_THREAD_ID\"\n```\n\nOn success it exits 0 and prints JSON whose `path` is the transcript. If either command exits non-zero, pass a tight digest of the session instead.",
+      "rationale": "Transcripts (t3-pstack 1.0.13: find-transcript.mjs on Claude Code, resolve-codex-transcript on Codex)"
+    },
+    {
+      "pattern": "One message, three `Task` calls, `subagent_type: generalPurpose`, agent mode (`readonly: false`). Reviewers need MCP access to look up the tickets, chat threads, and observability traces the transcript references, and readonly strips MCPs.",
+      "replacement": "One response, three `delegate_task` calls with `mode: \"async\"` and full tool access. Reviewers need MCP access to look up the tickets, chat threads, and observability traces the transcript references.",
+      "rationale": "Per-skill notes: reflect"
+    },
+    {
+      "pattern": "| Lens | Role line | Default `model` | Prompt template |",
+      "replacement": "| Lens | Role line | Default | Prompt template |",
+      "rationale": "The sheet"
+    },
+    {
+      "pattern": "Reviewers return findings in the `Task` response body.",
+      "replacement": "Reviewers return findings in their final message, which arrives as the `delegate_task` result.",
+      "rationale": "Tool actions: Wait"
+    },
+    {
+      "regex": "One `Task` call, `subagent_type: generalPurpose`, `model` from the `reflect judgment, divergent, synthesizer` line \\(default `(?:claude|gpt|grok|gemini|composer)-[^`]+`\\), agent mode \\(`readonly: false`\\)\\. It spot-verifies citations through MCP, and readonly strips MCPs\\.",
+      "replacement": "One `delegate_task` call with full tool access and `target` from the `reflect judgment, divergent, synthesizer` line (default in [Models](#models)). It spot-verifies citations through MCP.",
+      "rationale": "Per-skill notes: reflect"
+    },
+    {
+      "pattern": "(under `.cursor/skills/`, `~/.cursor/skills/`, or `~/.cursor/plugins/`), a `Task` prompt naming its path,",
+      "replacement": "(under a project or user skills directory such as `.claude/skills/` or `.agents/skills/`, or a plugin directory), a `delegate_task` brief naming its path,",
+      "rationale": "harness skill dirs; Tool actions: Dispatch"
+    },
+    {
+      "pattern": "Launch all reviewers in a single message with the Task tool,",
+      "replacement": "Launch all reviewers in a single response with `delegate_task`,",
+      "rationale": "Per-skill notes: interrogate"
+    },
+    {
+      "pattern": "Each reviewer gets `subagent_type: generalPurpose`, `readonly: true`, and `model` set to its configured entry, or its table default when there is no configured line. Omit `model` for an `auto` or `inherit-parent` entry, so that reviewer runs on the parent model.",
+      "replacement": "Each reviewer gets `role: \"review\"`, a brief that says to inspect only and change no file, and `target` set from its configured entry, or from its table default when there is no configured line. Omit `target` for an `auto` or `inherit-parent` entry, so that reviewer runs on the parent model.",
+      "rationale": "Per-skill notes: interrogate"
+    },
+    {
+      "pattern": "If the Task tool rejects a configured entry, run that reviewer on its family's table default and say so.",
+      "replacement": "If `delegate_task` rejects a configured entry, run that reviewer on another target of the same family from `orchestrator_capabilities` and say so.",
+      "rationale": "Subagent policy (rejected target)"
+    },
+    {
+      "pattern": "If it rejects a table default, spawn with the closest equivalent from the valid slugs in its error message (prefer the same family and reasoning tier),",
+      "replacement": "If it rejects a table default, spawn on the closest target of the same family from `orchestrator_capabilities` (prefer the same reasoning tier),",
+      "rationale": "Subagent policy (rejected target)"
+    },
+    {
+      "pattern": "If the Task tool rejects a configured entry, run that seat on its family's default and say so.",
+      "replacement": "If `delegate_task` rejects a configured entry, run that seat on another target of the same family from `orchestrator_capabilities` and say so.",
+      "rationale": "Subagent policy (rejected target)"
+    },
+    {
+      "pattern": "means the parent model, so omit `model` for it.",
+      "replacement": "means the parent model, so omit `target` for it.",
+      "rationale": "The sheet"
+    },
+    {
+      "pattern": "If it rejects a default, use the closest valid slug of the same family from its error message.",
+      "replacement": "If it rejects a default, use another target of the same family from `orchestrator_capabilities`.",
+      "rationale": "Subagent policy (rejected target)"
+    },
+    {
+      "pattern": "Spawn one readonly judge subagent on that model.",
+      "replacement": "Spawn one judge subagent on that model, briefed to inspect only and change no file.",
+      "rationale": "Subagent policy (readonly)"
+    },
+    {
       "files": "^skills/arena/SKILL\\.md$",
-      "replacement": "run one each on the defaults in [Models](#models).",
-      "rationale": "the runner defaults are stamped into the Models section"
+      "pattern": "Prefer a different model family from the parent's.",
+      "replacement": "Pick an entry whose model ran no candidate, so no model scores its own work, and among those prefer a different model family from the parent's. If every pool entry ran a candidate, say so in the reply and judge on the entry that ran the fewest.",
+      "rationale": "Per-skill notes: arena (t3-pstack 1.0.2: the cross-judge never scores its own candidate)"
     },
     {
-      "regex": "choose from `(?:claude|gpt|grok|gemini|composer)-[^`]+`(?:(?:,| and|, and) `(?:claude|gpt|grok|gemini|composer)-[^`]+`)*\\.",
-      "files": "^skills/arena/SKILL\\.md$",
-      "replacement": "choose from the runner defaults in [Models](#models).",
-      "rationale": "the cross-judge pool defaults to the stamped runners"
+      "pattern": "For `auto` or `inherit-parent`, omit `model` so the workers run on the parent model.",
+      "replacement": "For `auto` or `inherit-parent`, omit `target` so the workers run on the parent model.",
+      "rationale": "The sheet"
     },
     {
-      "regex": "With no family match, use `(?:claude|gpt|grok|gemini|composer)-[^`]+`\\.",
-      "files": "^skills/arena/SKILL\\.md$",
-      "replacement": "With no family match, use the single-role default in [Models](#models).",
-      "rationale": "the fallback model is the stamped single-role default"
-    },
-    {
-      "regex": "use `(?:claude|gpt|grok|gemini|composer)-[^`]+`(?:(?:,| and|, and) `(?:claude|gpt|grok|gemini|composer)-[^`]+`)*\\.",
-      "files": "^skills/architect/SKILL\\.md$",
-      "replacement": "use the defaults in [Models](#models).",
-      "rationale": "the runner defaults are stamped into the Models section"
-    },
-    {
-      "regex": "use `(?:claude|gpt|grok|gemini|composer)-[^`]+`\\.",
-      "files": "^skills/swarm/SKILL\\.md$",
-      "replacement": "use the default in [Models](#models).",
-      "rationale": "the worker default is stamped into the Models section"
-    },
-    {
-      "pattern": "Use the `interrogate reviewers` line in `~/.cursor/rules/pstack-models.mdc`,",
-      "replacement": "Use the `interrogate reviewers` line in the `pstack-models.md` override sheet (`/setup-pstack` lists its path per runtime),",
-      "rationale": "interrogate has no Models section to name the sheet's home, so the sentence points at setup-pstack; must precede the sheet-path rule"
-    },
-    {
-      "pattern": "(usually `.cursor/skills/verify-*/`)",
-      "replacement": "(`.claude/skills/verify/`, or `.claude/skills/verify-*/` from an older generator)",
-      "rationale": "a project skill named verify replaces Claude Code's user-only bundled /verify (#71); must precede the .cursor/skills/ rule"
-    },
-    {
-      "regex": "run `scripts/worktree-audit\\.sh[^`]*`",
-      "replacement": "run `skills/poteto-mode/scripts/worktree-audit.mjs` under the installed plugin",
-      "rationale": "the port ships its own audit script; a skill-relative path does not resolve from the working directory"
-    },
-    {
-      "pattern": " Without `-b` it checks `MERGED` against `origin/HEAD`, so pass `-b origin/<branch>` when PRs target another branch.",
-      "replacement": " It checks `MERGED` against the default branch origin advertises. A branch whose own PR merged into another base can still reach `safe` through its PR state.",
-      "rationale": "the port's worktree-audit.mjs has no -b flag; it reads the default branch from origin and classifies a branch merged elsewhere by its PR"
-    },
-    {
-      "pattern": "`.cursor/worktrees/myrepo/x`",
-      "replacement": "`.worktrees/myrepo/x`",
-      "rationale": "Claude Code has no editor-managed worktree directory"
-    },
-    {
-      "pattern": "from the user or sidebar",
-      "replacement": "from the user or your own session list",
-      "rationale": "Claude Code has no chat sidebar"
-    },
-    {
-      "pattern": "never hit the sidebar.",
-      "replacement": "never hit the session list.",
-      "rationale": "same sidebar, later in the step"
-    },
-    {
-      "pattern": "`~/Library/Application Support/Cursor` (`state.vscdb.backup`, and `snapshots/roots/<root>` where a `<root>` named for a folder you opened as a workspace balloons)",
-      "replacement": "your editor's application-support caches, `~/.claude/shell-snapshots/` and old `~/.claude/projects/` transcripts (keep the recent ones the **recall** skill and Session pickup read)",
-      "rationale": "Claude Code's own disk use, in place of Cursor's"
-    },
-    {
-      "pattern": "This playbook replaces Cursor's built-in babysit skill for these requests, so do not route there even though its description matches the same words.",
-      "replacement": "This playbook supersedes the bundled **babysit** skill for these requests, so do not route there even though its description matches the same words. `/babysit` stays the standalone entry point outside poteto-mode.",
-      "rationale": "the bundled babysit skill stays reachable by slash command; must precede the built-in babysit rule"
-    },
-    {
-      "pattern": "status comes from `scripts/watch-pr/watch-pr`.",
-      "replacement": "status comes from the watcher at `skills/poteto-mode/scripts/watch-pr/watch-pr` under the installed plugin.",
-      "rationale": "a skill-relative path does not resolve from the working directory"
-    },
-    {
-      "pattern": "Fan out N parallel cloud workers.",
-      "replacement": "Fan out N parallel workers.",
-      "rationale": "Claude Code subagents run on this machine"
-    },
-    {
-      "pattern": "not the cloud concurrency limit.",
-      "replacement": "not the number that run at once.",
-      "rationale": "Claude Code has no cloud concurrency limit"
-    },
-    {
-      "pattern": "`environment: \"cloud\"`, `run_in_background: true`, and the step 4 model, left unset for `auto` or `inherit-parent`. Use `environment: \"local\"` only when the worker needs access to something on the user's computer.",
-      "replacement": "`run_in_background: true`, and the step 4 model, left unset for `auto` or `inherit-parent`. Claude Code subagents all run on this machine, so isolation comes from the worktree or output directory assigned in Phase A, not from a remote environment.",
-      "rationale": "the Agent tool has no environment parameter"
+      "pattern": "Spawn all N workers in one message with `subagent_type: generalPurpose`, `environment: \"cloud\"`, `run_in_background: true`, and the step 4 model, left unset for `auto` or `inherit-parent`. Use `environment: \"local\"` only when the worker needs access to something on the user's computer.",
+      "replacement": "Spawn all N workers in one response as `delegate_task` calls with `mode: \"async\"` and the step 4 `target`, left unset for `auto` or `inherit-parent`. Every worker runs on this machine, so a worker that writes gets its own git worktree, named by absolute path in its brief as the only place it writes.",
+      "rationale": "Per-skill notes: swarm"
     },
     {
       "pattern": "When a worker must start from a non-default pushed branch, pass `cloud_base_branch`.",
-      "replacement": "When a worker must start from a non-default branch, check that branch out in the worker's own worktree and name the worktree path in its brief.",
-      "rationale": "the Agent tool has no base-branch parameter"
+      "replacement": "When a worker must start from a non-default branch, create its worktree from that branch.",
+      "rationale": "no cloud base branch on T3"
     },
     {
-      "pattern": "A local root arms each tick as a real terminal `/loop`. The loop uses a monitored-shell 30-minute sleep and emits an output-notification sentinel. A cloud root uses the existing cloud-sleeper wake chain instead.",
-      "replacement": "Arm each tick as a real `/loop` in dynamic mode, which schedules its own wake-up rather than blocking on a sleep.",
-      "rationale": "Claude Code's /loop schedules its own wake-up; there is no cloud root"
+      "pattern": "Transcripts live at `~/.cursor/projects/<slug>/agent-transcripts/<uuid>/<uuid>.jsonl`, where `<slug>` is the workspace path with the leading slash dropped and each \"/\" turned into \"-\" (so `/Users/you/proj` becomes `Users-you-proj`). Every line is one chat message.",
+      "replacement": "Your chat history lives in T3. `t3_thread_list` lists this project's threads newest first, `t3_thread_search` searches their titles and content within one project, and `t3_thread_read` reads one thread, bounded by `maxCharsPerItem`, with `afterPosition` to page.",
+      "rationale": "Tool actions: Find an earlier conversation"
     },
     {
-      "pattern": "re-read this playbook from trunk with `git show origin/main:pstack/skills/poteto-mode/playbooks/autopilot-full.md`",
-      "replacement": "re-read this playbook from disk (`skills/poteto-mode/playbooks/autopilot-full.md` under the installed plugin)",
-      "rationale": "the installed plugin, not an upstream checkout, is what the session runs"
+      "pattern": "Tell every subagent to order candidates by real modification time (`ls -t`) and never by UUID name,",
+      "replacement": "Tell every subagent to order candidates by `updatedAt` from `t3_thread_list` and never by thread ID,",
+      "rationale": "Tool actions: Find an earlier conversation"
     },
     {
-      "pattern": "re-read this playbook from trunk with `git show origin/main:pstack/skills/poteto-mode/playbooks/autopilot-stack.md`",
-      "replacement": "re-read this playbook from disk (`skills/poteto-mode/playbooks/autopilot-stack.md` under the installed plugin)",
-      "rationale": "same, for the stack playbook"
+      "pattern": "each citing the chat UUID.",
+      "replacement": "each citing the thread ID.",
+      "rationale": "Tool actions: Find an earlier conversation"
     },
     {
-      "pattern": "Bugbot or the agentic security review commented",
-      "replacement": "An automated PR-review bot or the agentic security review commented",
-      "rationale": "the port routes any automated PR-review bot, not only Cursor's Bugbot"
+      "pattern": "This skill orchestrates three others: an inline mining pass (see step 1), Cursor's built-in `create-skill` (authoring),",
+      "replacement": "This skill orchestrates three others: an inline mining pass (see step 1), the harness's skill-authoring skill (`skill-creator` where installed, else the Agent Skills format),",
+      "rationale": "create-skill is a Cursor built-in"
+    },
+    {
+      "pattern": "Look recursively for `.cursor/skills/**/*-mode/SKILL.md` and `~/.cursor/skills/*-mode/SKILL.md` matching the user's handle. Mode skills can live in a personal category directory (`.cursor/skills/<handle>/`), not only at the top level. If one exists, confirm intent with `AskQuestion`",
+      "replacement": "Look recursively for `*-mode/SKILL.md` in the project's and the user's skills directories (`.claude/skills/` and `~/.claude/skills/` on Claude Code, `.agents/skills/` and `~/.agents/skills/` on Codex and most other harnesses) matching the user's handle. Mode skills can live in a personal category directory (`<skills dir>/<handle>/`), not only at the top level. If one exists, confirm intent with a multiple-choice question (`AskUserQuestion` on Claude Code, numbered options in plain text elsewhere)",
+      "rationale": "harness-specific skill dirs and question tool"
+    },
+    {
+      "pattern": "Locate the active workspace's transcripts before fanning out. The system prompt names the workspace's `agent-transcripts/` directory. Use only that path. Don't glob across `~/.cursor/projects/*/`.",
+      "replacement": "Locate this project's conversations before fanning out. They are T3 threads: `t3_thread_list` lists them newest first and `t3_thread_search` searches them, both within this thread's project. Use only that project. Don't search other projects.",
+      "rationale": "Per-skill notes: automate-me"
+    },
+    {
+      "pattern": "Each slice mining subagent reads transcripts from the workspace-scoped path the parent provides,",
+      "replacement": "Each slice mining subagent reads, with `t3_thread_read`, the threads the parent lists for its slice,",
+      "rationale": "Per-skill notes: automate-me"
+    },
+    {
+      "pattern": "Use the `AskQuestion` tool (structured multi-choice) rather than asking the user to type from scratch.",
+      "replacement": "Ask a structured multiple-choice question (`AskUserQuestion` on Claude Code, numbered options in plain text where the harness has no question tool) rather than asking the user to type from scratch.",
+      "rationale": "harness-specific question tool"
+    },
+    {
+      "pattern": "For a new mode, use `.cursor/skills/<handle>/<handle>-mode/SKILL.md` when the repo has an established personal category for that handle. Otherwise default to `.cursor/skills/<handle>-mode/SKILL.md` in the project (or `~/.cursor/skills/<handle>-mode/` if the user prefers a personal skill).",
+      "replacement": "For a new mode, use `<skills dir>/<handle>/<handle>-mode/SKILL.md` when the repo has an established personal category for that handle. Otherwise default to `<skills dir>/<handle>-mode/SKILL.md` in the project, or in the user's skills directory if the user prefers a personal skill. `<skills dir>` is `.claude/skills` on Claude Code and `.agents/skills` elsewhere.",
+      "rationale": "harness-specific skill dirs"
+    },
+    {
+      "pattern": "Read this run's transcript under the active workspace's `agent-transcripts/` directory (the system prompt names the path). Don't glob across `~/.cursor/projects/*/`. That reads unrelated private chats.",
+      "replacement": "Read this run's thread with `t3_thread_read` (`t3_thread_configuration` with no `threadId` returns its ID), and each child's thread by its `childThreadId`. Don't read other projects' threads. That reads unrelated private chats.",
+      "rationale": "Per-skill notes: show-me-your-work"
+    },
+    {
+      "pattern": "(`.cursor/skills/verify-<app>/`)",
+      "replacement": "(`<skills dir>/verify-<app>/`, where `<skills dir>` is `.claude/skills` on Claude Code and `.agents/skills` elsewhere)",
+      "rationale": "harness-specific skill dirs"
+    },
+    {
+      "pattern": "`.cursor/skills/verify-<app>/",
+      "replacement": "`<skills dir>/verify-<app>/",
+      "rationale": "harness-specific skill dirs"
+    },
+    {
+      "pattern": "(usually `.cursor/skills/verify-*/`)",
+      "replacement": "(usually `.claude/skills/verify-*/` on Claude Code or `.agents/skills/verify-*/` elsewhere)",
+      "rationale": "harness-specific skill dirs"
+    },
+    {
+      "pattern": "2. Pick the wake mechanism using Cursor's `/loop` command (a built-in, not a pstack skill).",
+      "replacement": "2. Pick the wake mechanism with T3's `schedule_task`, bound to this thread with a `title` that names the run, and `delete_scheduled_task` it when the run ends.",
+      "rationale": "Tool actions: Schedule",
+      "files": "^skills/poteto-mode/playbooks/"
+    },
+    {
+      "pattern": "Do not park reversible work for the human or use `AskQuestion`.",
+      "replacement": "Do not park reversible work for the human or ask the user a question.",
+      "rationale": "the rule is about asking, not the tool",
+      "files": "^skills/poteto-mode/playbooks/"
+    },
+    {
+      "pattern": "1. Use the **create-skill** skill (Cursor's built-in for authoring SKILL.md files).",
+      "replacement": "1. Use the harness's skill-authoring skill (`skill-creator` where installed, else the Agent Skills format).",
+      "rationale": "create-skill is a Cursor built-in",
+      "files": "^skills/poteto-mode/playbooks/"
+    },
+    {
+      "files": "^skills/poteto-mode/playbooks/",
+      "pattern": "Each owner is a Cursor cloud agent that builds, opens its PR",
+      "replacement": "Each owner is a top-level T3 thread that `t3_thread_launch` starts with `workspaceStrategy: {type: \"worktree\", baseRef, branch, startFromOrigin: false}` and a brief that names this playbook and this thread's ID, so the owner reports back with `t3_thread_send`. It builds, opens its PR",
+      "rationale": "Playbooks: Autopilot-full (each PR owner is a t3_thread_launch thread in its own worktree)"
+    },
+    {
+      "files": "^skills/poteto-mode/playbooks/",
+      "pattern": "Assume the VM dies.",
+      "replacement": "Assume the owner's session dies.",
+      "rationale": "no cloud VMs on T3; an owner is a T3 thread"
+    },
+    {
+      "files": "^skills/poteto-mode/playbooks/",
+      "pattern": "in the root agent's store (path in the system prompt)",
+      "replacement": "in the root's store, `${XDG_STATE_HOME:-~/.local/state}/t3-pstack/` (T3 names no agent store),",
+      "rationale": "no Cursor agent store on T3"
+    },
+    {
+      "files": "^skills/poteto-mode/playbooks/",
+      "pattern": "through its control skill (such as `control-ui` or `control-cli` from `cursor-team-kit`) or a named driver",
+      "replacement": "through its control skill (see poteto-mode's Non-negotiables) or a named driver",
+      "rationale": "UI evidence"
+    },
+    {
+      "files": "^skills/poteto-mode/playbooks/",
+      "pattern": "Fan out independent verifiers at the code-ready SHA per the **swarm** skill.",
+      "replacement": "Fan out independent verifiers at the code-ready SHA per the **swarm** skill, as `delegate_task` children assigned round-robin over the `interrogate reviewers` entries, so the lanes span model families.",
+      "rationale": "Playbooks: Autopilot (verifier lanes span families)"
+    },
+    {
+      "files": "^skills/poteto-mode/playbooks/",
+      "pattern": "On the operator's go, arm `/loop 1h` to audit until no delegated work is left, because long runs drift and agents stall silently.",
+      "replacement": "On the operator's go, arm an hourly audit until no delegated work is left, because long runs drift and agents stall silently. The audit is a `schedule_task` bound to this thread, `{type: \"interval\", everyMs: 3600000}`, with a `title` that names the program and a prompt that runs this step. Report its `nextRunAt`, and `delete_scheduled_task` it when the program ends.",
+      "rationale": "Playbooks: Autopilot (hourly tick); Tool actions: Schedule"
+    },
+    {
+      "files": "^skills/poteto-mode/playbooks/",
+      "pattern": "re-reads this playbook from trunk",
+      "replacement": "re-reads this playbook from disk",
+      "rationale": "an installed plugin has no trunk; the playbook's own file is on disk"
+    },
+    {
+      "files": "^skills/poteto-mode/playbooks/",
+      "pattern": "re-reads both playbooks from trunk",
+      "replacement": "re-reads both playbooks from disk",
+      "rationale": "an installed plugin has no trunk; the playbooks' own files are on disk"
+    },
+    {
+      "pattern": "This playbook replaces Cursor's built-in babysit skill for these requests, so do not route there even though its description matches the same words. ",
+      "replacement": "",
+      "rationale": "no competing built-in babysit on T3",
+      "files": "^skills/poteto-mode/playbooks/"
+    },
+    {
+      "pattern": "In `check` mode pass `--status-only`.",
+      "replacement": "In `check` mode pass `--status-only --timeout 120 --max-query-errors 2`, which returns inside the 600-second tool cap.",
+      "rationale": "Playbooks: Babysit check",
+      "files": "^skills/poteto-mode/playbooks/"
+    },
+    {
+      "pattern": "Run `drive` and `background` under `/loop` in dynamic mode.",
+      "replacement": "Run `drive` as a loop inside the turn: run the watcher with `--timeout 540` and the shell's own timeout above 540 seconds and under the 600-second tool cap, act on its verdict, and run it again. Report and stop when the verdict's head SHA, kind, and reason have not changed for two hours, or after three hours in all. A `BLOCKER` with reason `review-required` or `merge-blocked` (exit 6) needs a person, so report it and stop the loop instead of rerunning the watcher. `review-required` is the wait for a human review below, and `merge-blocked`, a branch protection rule the watcher cannot name, goes back to the user. Run `background` by arming T3's `watch_pull_request` on the frontier and taking the watcher's verdict with `--timeout 180` at each natural pause. A wait for a human review is `watch_pull_request` and the end of the turn, because another account's review wakes the thread. Unwatch with `unwatch_pull_request` when babysitting stops. The watcher holds `READY` until accounts other than the PR author and the `gh` viewer have been quiet on the PR for `--settle` seconds (default 300) since the latest push, opening, or ready for review, and up to 30 minutes after that while an `eyes` reaction is open, so no per-bot wait rules are needed.",
+      "rationale": "Playbooks: Babysit drive and background; the watch-pr settle overlay (t3-pstack 1.0.5); the exit 6 merge gates from pstack-claude #95 (t3-pstack 2.0.0-rc.2)",
+      "files": "^skills/poteto-mode/playbooks/"
+    },
+    {
+      "pattern": "status comes from `scripts/watch-pr/watch-pr`.",
+      "replacement": "status comes from `<plugin root>/skills/poteto-mode/scripts/watch-pr/watch-pr`.",
+      "rationale": "a skill-relative path does not resolve from the project directory",
+      "files": "^skills/poteto-mode/playbooks/"
+    },
+    {
+      "files": "^skills/poteto-mode/playbooks/",
+      "pattern": "(`scripts/watch-pr/watch-pr --queued-stack --stack-prs <bottom-to-top>`) under `/loop` until it reports `COMPLETE` at the ceiling.",
+      "replacement": "(`<plugin root>/skills/poteto-mode/scripts/watch-pr/watch-pr --queued-stack --stack-prs <bottom-to-top>`) as a loop inside the turn until it reports `COMPLETE` at the ceiling. Run it with `--timeout 540` and the shell's own timeout above 540 seconds and under the 600-second tool cap, check the ceiling after each return, and report and stop after three hours. `watch_pull_request` cannot stand in here, because it does not wake on a merge or on merge-queue state.",
+      "rationale": "Playbooks: Shipping (the watcher loops inside the turn); a skill-relative path does not resolve from the project directory"
+    },
+    {
+      "pattern": "run `scripts/worktree-audit.sh",
+      "replacement": "run `<plugin root>/skills/poteto-mode/scripts/worktree-audit.sh",
+      "rationale": "a skill-relative path does not resolve from the project directory",
+      "files": "^skills/poteto-mode/playbooks/"
+    },
+    {
+      "pattern": "Drive a long or stubborn hunt with Cursor's `/loop` command.",
+      "replacement": "Drive a long or stubborn hunt with a `schedule_task` loop bound to this thread.",
+      "rationale": "Tool actions: Schedule",
+      "files": "^skills/poteto-mode/playbooks/"
+    },
+    {
+      "pattern": "Read each candidate's local transcript under the active workspace's `agent-transcripts/` directory (the system prompt names this path). Do not glob across `~/.cursor/projects/*/`.",
+      "replacement": "Read each candidate's T3 thread with `t3_thread_read` (`view: \"activity\"`), by the thread or `childThreadId` it ran as. Do not read other projects' threads.",
+      "rationale": "Transcripts",
+      "files": "^skills/poteto-mode/playbooks/"
+    },
+    {
+      "pattern": "on the `swarm workers` model (default `grok-4.7-xhigh-fast`)",
+      "replacement": "on the `swarm workers` model (default in the **swarm** skill's Models section)",
+      "rationale": "Model names",
+      "files": "^skills/poteto-mode/playbooks/"
+    },
+    {
+      "pattern": "Browser, Electron, and web UIs use `control-ui` from `cursor-team-kit`. CLIs and TUIs use `control-cli` from `cursor-team-kit`. Native mobile uses whatever simulator-driving skill the repo has.",
+      "replacement": "The project's verify skill comes first. Otherwise web UIs use T3's `preview_*` tools, CLIs and TUIs their own commands, and native mobile T3's `device_*` tools or the repo's simulator-driving skill. Electron and desktop apps need the project's own driver.",
+      "rationale": "UI evidence",
+      "files": "^skills/poteto-mode/playbooks/"
+    },
+    {
+      "pattern": "Read these from trunk at program start.",
+      "replacement": "Read these at program start.",
+      "rationale": "an installed plugin has no trunk to read",
+      "files": "^skills/poteto-mode/playbooks/"
+    },
+    {
+      "files": "^skills/poteto-mode/playbooks/",
+      "pattern": "Re-read the execution playbook from trunk.",
+      "replacement": "Re-read the execution playbook from disk.",
+      "rationale": "an installed plugin has no trunk to read; the playbook's own file is on disk"
+    },
+    {
+      "pattern": "`git show origin/main:<control skill path>`",
+      "replacement": "`cat <control skill path>`",
+      "rationale": "an installed plugin has no trunk to read",
+      "files": "^skills/poteto-mode/playbooks/"
+    },
+    {
+      "pattern": "arm the audit tick as `/loop 1h` with the tick prompt below",
+      "replacement": "arm the audit tick as an hourly schedule_task bound to this thread with the tick prompt below",
+      "rationale": "Playbooks: Autopilot (hourly tick); check-plan.mjs reads the same marker",
+      "files": "^skills/poteto-mode/playbooks/"
+    },
+    {
+      "pattern": "Each live lane runs on its own cloud VM at the PR head. Drive through `control-ui` or `control-cli` from `cursor-team-kit`.",
+      "replacement": "Each live lane runs in its own worktree at the PR head. Drive through the control skill above.",
+      "rationale": "no cloud VMs on T3; UI evidence",
+      "files": "^skills/poteto-mode/playbooks/"
+    },
+    {
+      "pattern": "Agents are spawned, resumed, and drained only through the Task tool.",
+      "replacement": "Agents are spawned, resumed, and drained only through `delegate_task`, `t3_thread_send` to a child's `childThreadId`, and `task_status`.",
+      "rationale": "Tool actions",
+      "files": "^skills/poteto-mode/playbooks/"
+    },
+    {
+      "pattern": "(nesting works to depth 3, and a nested spawn has the full Task schema including `environment`)",
+      "replacement": "(a `delegate_task` child can delegate its own)",
+      "rationale": "Tool actions: Dispatch",
+      "files": "^skills/poteto-mode/playbooks/"
+    },
+    {
+      "pattern": "- **Worker / verifier.** Always `environment: \"cloud\"` unless the task needs this machine: `control-ui` or `control-cli` runtime verification (from `cursor-team-kit`). Reading local transcripts under `agent-transcripts/`. Simulators and local IDE state. Auth that exists only here. Cloud agents cannot read the local store, so their briefs inline what they need or point at repo paths.",
+      "replacement": "- **Worker / verifier.** Always a `delegate_task` child in its own git worktree, named by absolute path in its brief as the only place it writes. Every child runs on this machine, so it can drive the real surface, read T3 threads, and use local auth. A child starts without your context, so its brief inlines what it needs or points at repo paths.",
+      "rationale": "Playbooks: Orchestrate; Subagent policy (worktree)",
+      "files": "^skills/poteto-mode/playbooks/"
+    },
+    {
+      "pattern": "in the current agent's store (path in the system prompt).",
+      "replacement": "in `${XDG_STATE_HOME:-~/.local/state}/t3-pstack/` (T3 names no agent store).",
+      "rationale": "no Cursor agent store on T3",
+      "files": "^skills/poteto-mode/playbooks/"
+    },
+    {
+      "pattern": "its spawn budget with the cloud default and the local exception list,",
+      "replacement": "its spawn budget,",
+      "rationale": "no cloud default on T3",
+      "files": "^skills/poteto-mode/playbooks/"
+    },
+    {
+      "files": "^skills/poteto-mode/playbooks/",
+      "pattern": "Chain rebases run in cloud. A local rebase at this scale takes the laptop down.",
+      "replacement": "Chain rebases run one at a time, each in its own worktree, because a rebase at this scale can take the laptop down.",
+      "rationale": "no cloud on T3; every child runs on this machine"
+    },
+    {
+      "pattern": "Work that exists only on one VM when that VM dies was never done.",
+      "replacement": "Work that exists only in one worktree when that worktree is removed was never done.",
+      "rationale": "no cloud VMs on T3",
+      "files": "^skills/poteto-mode/playbooks/"
+    },
+    {
+      "pattern": "the cloud agent's status in the Cursor dashboard.",
+      "replacement": "each child's `task_status`.",
+      "rationale": "Tool actions: List subagents",
+      "files": "^skills/poteto-mode/playbooks/"
+    },
+    {
+      "pattern": "- After a Cursor restart: local agents are dead, cloud work is not. Re-read the standing orders and `units.tsv`, recompute the frontier, reattach cloud work by PR and branch rather than agent id,",
+      "replacement": "- After a T3 restart: in-flight turns stop, while T3 threads, their worktrees, and pushed branches survive. Re-read the standing orders and `units.tsv`, recompute the frontier, reattach work by PR and branch rather than task id,",
+      "rationale": "no cloud agents on T3",
+      "files": "^skills/poteto-mode/playbooks/"
+    },
+    {
+      "pattern": "A local transcript under the active workspace's `agent-transcripts/` directory (the system prompt names the path. Do not glob across `~/.cursor/projects/*/`, that crosses workspace boundaries and reads private chats from unrelated projects), a cloud-agent URL, or a pushed branch.",
+      "replacement": "A T3 thread in this project (`t3_thread_search`, then `t3_thread_read`. Do not read other projects' threads, that crosses workspace boundaries and reads private chats from unrelated projects), or a pushed branch.",
+      "rationale": "Tool actions: Find an earlier conversation",
+      "files": "^skills/poteto-mode/playbooks/"
+    },
+    {
+      "files": "^skills/poteto-mode/playbooks/",
+      "pattern": "One verifier per PR, each a Cursor cloud agent, runs the change the way a user would with the matching control skill (such as `control-ui` or `control-cli` from `cursor-team-kit`), parent against head,",
+      "replacement": "One verifier per PR, each a `delegate_task` child in its own worktree, runs the change the way a user would with the matching control skill in poteto-mode's Non-negotiables, parent against head,",
+      "rationale": "Playbooks: Shipping; UI evidence"
+    },
+    {
+      "pattern": "`/loop` per component until the diff is zero.",
+      "replacement": "Repeat per component until the diff is zero.",
+      "rationale": "no /loop on T3",
+      "files": "^skills/poteto-mode/playbooks/"
+    },
+    {
+      "pattern": "`.cursor/worktrees/myrepo/x`",
+      "replacement": "`.claude/worktrees/myrepo/x`",
+      "rationale": "where the port's delegates put worktrees (Subagent policy: worktree)",
+      "files": "^skills/poteto-mode/playbooks/"
+    },
+    {
+      "pattern": "Get that set from the user or sidebar and cross-check every candidate.",
+      "replacement": "Get that set from the user, and from the T3 threads bound to each worktree (page through `t3_thread_list` with `includeSubagents: true` and read each thread's `worktreePath` with `t3_thread_read`), and cross-check every candidate.",
+      "rationale": "Playbooks: Worktree cleanup",
+      "files": "^skills/poteto-mode/playbooks/"
+    },
+    {
+      "pattern": "never hit the sidebar.",
+      "replacement": "never show in the thread list.",
+      "rationale": "no Cursor sidebar on T3",
+      "files": "^skills/poteto-mode/playbooks/"
+    },
+    {
+      "pattern": "`~/Library/Application Support/Cursor` (`state.vscdb.backup`, and `snapshots/roots/<root>` where a `<root>` named for a folder you opened as a workspace balloons), ",
+      "replacement": "",
+      "rationale": "Cursor's application data does not exist on T3",
+      "files": "^skills/poteto-mode/playbooks/"
+    },
+    {
+      "regex": "Cursor's built-in `create-skill`(?: skill)?",
+      "replacement": "the harness's skill-authoring skill (`skill-creator` where installed)",
+      "rationale": "create-skill is a Cursor built-in; Codex ships skill-creator"
     },
     {
       "pattern": "(the `deslop` skill from the `cursor-team-kit` plugin (`/deslop`))",
       "replacement": "(the **deslop** skill, `/deslop`)",
-      "rationale": "the port ships deslop itself; inside a parenthesis the port avoids nesting a second one; must precede the bare phrase"
+      "rationale": "the port carries deslop"
     },
     {
       "pattern": "the `deslop` skill from the `cursor-team-kit` plugin (`/deslop`)",
       "replacement": "the **deslop** skill (`/deslop`)",
-      "rationale": "the port ships deslop itself"
+      "rationale": "the port carries deslop"
     },
     {
       "pattern": "`/deslop` from `cursor-team-kit`",
       "replacement": "`/deslop`",
-      "rationale": "same skill, in the PR checklist"
+      "rationale": "the port carries deslop"
     },
     {
-      "pattern": "Cloud-agent PR tools default to draft, so set `draft: false` on every PR creation call.",
-      "replacement": "Some PR tools default to draft, so check every creation call.",
-      "rationale": "Claude Code has no cloud-agent PR tool"
+      "pattern": "and give `/loop` that predicate.",
+      "replacement": "and give the loop that predicate.",
+      "rationale": "no /loop on T3",
+      "files": "^skills/poteto-help/references/prompting\\.md$"
     },
     {
-      "pattern": "~/.cursor/rules/pstack-models.mdc",
-      "replacement": "pstack-models.md",
-      "rationale": "the per-role override sheet; must precede the generic .cursor/rules/ rule or that rule mangles the path"
-    },
-    {
-      "pattern": "AskQuestion",
-      "replacement": "AskUserQuestion",
-      "rationale": "Claude Code's fixed-choice question tool; upstream Cursor names it AskQuestion"
-    },
-    {
-      "pattern": "the Task tool",
-      "replacement": "the `Agent` tool",
-      "rationale": "Claude Code dispatches subagents with the Agent tool; Cursor calls it Task. The port writes the tool name in backticks"
-    },
-    {
-      "pattern": "`Task`",
-      "replacement": "`Agent`",
-      "rationale": "same tool, backticked; covers `Task` call, `Task` prompts, and the `Task` response body"
-    },
-    {
-      "pattern": "Task subagent",
-      "replacement": "`Agent` subagent",
-      "rationale": "same tool, named bare before the word subagent; the port writes the tool name in backticks"
-    },
-    {
-      "pattern": "Task spawn",
-      "replacement": "`Agent` spawn",
-      "rationale": "same tool, named bare before the word spawn; the port writes the tool name in backticks"
-    },
-    {
-      "pattern": "control skill",
-      "replacement": "driver skill",
-      "rationale": "driver selection lives in poteto-mode/SKILL.md Non-negotiables; preserve the older generator trigger in its local description"
-    },
-    {
-      "pattern": "restart Cursor",
-      "replacement": "restart Claude Code",
-      "rationale": "the host application"
-    },
-    {
-      "regex": "\\(default `(?:claude|gpt|grok|gemini|composer)-[^`]+`\\)",
-      "files": "^skills/poteto-mode/playbooks/",
-      "replacement": "(default in poteto-mode's Models section)",
-      "rationale": "model defaults live in models.json and are stamped into Models sections, never hard-coded in prose; playbooks belong to poteto-mode"
-    },
-    {
-      "regex": "\\(default `(?:claude|gpt|grok|gemini|composer)-[^`]+`\\)",
-      "files": "/SKILL\\.md$",
-      "replacement": "(default in [Models](#models))",
-      "rationale": "same rule for a skill body, which carries its own Models section"
-    },
-    {
-      "regex": ", default `(?:claude|gpt|grok|gemini|composer)-[^`]+`",
-      "files": "/SKILL\\.md$",
-      "replacement": ", default in [Models](#models)",
-      "rationale": "a role bullet's default model is stamped into the skill's Models section, never hard-coded in prose"
-    },
-    {
-      "regex": "Defaults `(?:claude|gpt|grok|gemini|composer)-[^`]+` for code, `(?:claude|gpt|grok|gemini|composer)-[^`]+` for prose and judgment",
-      "files": "^skills/poteto-mode/SKILL\\.md$",
-      "replacement": "Role defaults in [Models](#models), with \"judgment and prose\" covering prose and judgment",
-      "rationale": "the delegate defaults are stamped into poteto-mode's Models section, so an upstream model bump on this line is not a change to the port"
-    },
-    {
-      "regex": "strongest judgment model \\(`(?:claude|gpt|grok|gemini|composer)-[^`]+`\\)",
-      "files": "^skills/poteto-mode/SKILL\\.md$",
-      "replacement": "strongest-judgment model (default in [Models](#models))",
-      "rationale": "same line, the strongest-judgment default"
-    },
-    {
-      "pattern": "omit Task `model`",
-      "replacement": "omit `model` on the `Agent` call",
-      "rationale": "Claude Code's subagent tool is `Agent`, and the bare tool name is on the denylist"
-    },
-    {
-      "regex": " \\| `(?:claude|gpt|grok|gemini|composer)-[^`]+` \\| `references/",
-      "files": "^skills/reflect/SKILL\\.md$",
-      "replacement": " | default in [Models](#models) | `references/",
-      "rationale": "a reviewer row's default model is stamped into reflect's Models section, so an upstream model bump in the table is not a change to the port"
-    },
-    {
-      "regex": "(?:claude|gpt|grok|gemini|composer)-[0-9a-z.]+(?:-[0-9a-z.]+)+(?<!\\.)",
-      "files": "^skills/setup-pstack/SKILL\\.md$",
-      "replacement": "<slug>",
-      "rationale": "the port writes its own sheet from models.json and replaces Cursor's budget step, so every upstream slug in setup-pstack is scrubbed to the placeholder the port already uses; a conflict there can then be written and resolved, and a model bump alone is no conflict. Must follow the default-phrase rules above"
-    },
-    {
-      "pattern": "the `pstack-models.mdc` rule and a default.",
-      "replacement": "`pstack-models.md` and a default in [Models](#models).",
-      "rationale": "the override sheet and the stamped defaults a spawn falls back to; must precede the shorter `pstack-models.mdc` rule phrase"
-    },
-    {
-      "pattern": "the `pstack-models.mdc` rule",
-      "replacement": "`pstack-models.md`",
-      "rationale": "the override sheet is a file the user includes, not a Cursor rule"
-    },
-    {
-      "pattern": "the rule or that line is missing",
-      "replacement": "the sheet or that line is missing",
-      "rationale": "the override sheet, not a Cursor rule"
-    },
-    {
-      "pattern": "the rule or the line is missing",
-      "replacement": "the sheet or the line is missing",
-      "rationale": "same sentence, the other wording upstream uses"
-    },
-    {
-      "regex": "Families go by prefix: `[a-z]+-\\*`(?:(?:,| and|, and) `[a-z]+-\\*`)*\\.",
-      "replacement": "Families go by model name, such as Opus, Fable, or Sonnet.",
-      "rationale": "Claude Code names models by family, not by slug prefix"
-    },
-    {
-      "regex": "the Reviewer A(?:/[B-Z])+ labels below",
-      "files": "^skills/interrogate/SKILL\\.md$",
-      "replacement": "the Reviewer labels below",
-      "rationale": "the reviewer table is stamped from the panel in models.json, so the prose names no label run that a panel change would make wrong"
-    },
-    {
-      "pattern": ".cursor/skills/",
-      "replacement": ".claude/skills/",
-      "rationale": "personal skills directory"
-    },
-    {
-      "pattern": ".cursor/rules/",
-      "replacement": "CLAUDE.md imports",
-      "rationale": "Claude Code has no auto-applied rules directory; inclusion is explicit via CLAUDE.md"
-    },
-    {
-      "pattern": "`~/.cursor/projects/*/`",
-      "replacement": "`~/.claude/projects/`",
-      "rationale": "Claude Code keeps every project's transcripts under ~/.claude/projects/"
-    },
-    {
-      "regex": "the active workspace's `agent-transcripts/` directory(?: \\(the system prompt names (?:the|this) path\\))?",
-      "replacement": "Claude Code's per-project transcripts directory at `~/.claude/projects/<encoded-cwd>/`",
-      "rationale": "Cursor's system prompt names its agent-transcripts directory; Claude Code's does not, so the port names the path"
-    },
-    {
-      "pattern": "the `agent-transcripts/` directory the system prompt names",
-      "replacement": "Claude Code's per-project transcripts directory at `~/.claude/projects/<encoded-cwd>/`",
-      "rationale": "Cursor's system prompt names its agent-transcripts directory; Claude Code's does not, so the port names the path"
-    },
-    {
-      "pattern": "~/.cursor/plugins/",
-      "replacement": "~/.claude/plugins/",
-      "rationale": "Claude Code installs plugins under ~/.claude/plugins/"
-    },
-    {
-      "pattern": "`generalPurpose`",
-      "replacement": "`general-purpose`",
-      "rationale": "Claude Code's built-in agent type is general-purpose"
-    },
-    {
-      "pattern": "subagent_type: generalPurpose",
-      "replacement": "subagent_type: \"general-purpose\"",
-      "rationale": "the built-in agent type, unbackticked inside a backticked parameter list"
-    },
-    {
-      "pattern": "subagent_type: \"poteto-agent\"",
-      "replacement": "subagent_type: \"pstack:poteto-agent\"",
-      "rationale": "plugin agents register under the plugin namespace; the bare name errors (#58)"
-    },
-    {
-      "regex": "Cursor's built-in `create-skill`(?: skill)?",
-      "replacement": "the **plugin-dev:skill-development** skill",
-      "rationale": "Claude Code's skill-authoring guidance ships in the plugin-dev plugin; must precede the bare create-skill rule"
-    },
-    {
-      "pattern": "(Cursor's built-in for authoring SKILL.md files)",
-      "replacement": "(Claude Code's authoring guidance for SKILL.md files)",
-      "rationale": "the parenthetical that follows the skill name"
-    },
-    {
-      "pattern": "create-skill",
-      "replacement": "plugin-dev:skill-development",
-      "rationale": "the same skill, named bare or in backticks"
-    },
-    {
-      "pattern": "Cursor's `/loop` command",
-      "replacement": "Claude Code's `loop` skill",
-      "rationale": "Claude Code ships /loop as a bundled skill"
+      "pattern": "`git show origin/main:pstack/skills/",
+      "replacement": "`cat <plugin root>/skills/",
+      "rationale": "an installed plugin has no trunk to read"
     },
     {
       "pattern": "a Cursor restart",
-      "replacement": "a session restart",
-      "rationale": "the host application"
+      "replacement": "an app restart",
+      "rationale": "no Cursor on T3"
     },
     {
-      "pattern": "Cursor's built-in babysit skill",
-      "replacement": "the bundled **babysit** skill",
-      "rationale": "Claude Code bundles its own babysit skill with the same trigger words"
+      "pattern": "`~/.cursor/rules/pstack-models.mdc`",
+      "replacement": "the model sheet",
+      "rationale": "The sheet"
     },
     {
-      "pattern": "One Cursor cloud agent per PR",
-      "replacement": "One background subagent per PR, in its own worktree,",
-      "rationale": "Claude Code runs subagents locally; a worktree per writer gives the isolation a cloud VM gave"
+      "pattern": "the `pstack-models.mdc` rule",
+      "replacement": "the model sheet",
+      "rationale": "The sheet"
     },
     {
-      "pattern": "arm a `/goal` with the full program objective. The goal continues across turns",
-      "replacement": "write the full program objective into the standing orders and restate it in your todolist. That objective stands across turns",
-      "rationale": "Cursor's /goal has no Claude Code equivalent"
+      "pattern": "If the rule or that line is missing",
+      "replacement": "If the sheet or that line is missing",
+      "rationale": "The sheet"
     },
     {
-      "pattern": "bugbot comments",
-      "replacement": "review-bot comments",
-      "rationale": "the port routes any automated PR-review bot, not only Cursor's Bugbot"
+      "regex": "default to one each on `(?:claude|gpt|grok|gemini|composer)-[^`]+`(?:(?:,| and|, and) `(?:claude|gpt|grok|gemini|composer)-[^`]+`)*\\.",
+      "replacement": "run one each on the defaults in [Models](#models).",
+      "rationale": "Model names",
+      "files": "^skills/arena/SKILL\\.md$"
     },
     {
-      "pattern": "skeptical Bugbot triage",
-      "replacement": "skeptical review-bot triage",
-      "rationale": "same routing, in the autopilot owner loop"
+      "regex": "choose from `(?:claude|gpt|grok|gemini|composer)-[^`]+`(?:(?:,| and|, and) `(?:claude|gpt|grok|gemini|composer)-[^`]+`)*\\.",
+      "replacement": "choose from the `arena cross-judge pool` defaults in [Models](#models).",
+      "rationale": "Model names",
+      "files": "^skills/arena/SKILL\\.md$"
+    },
+    {
+      "regex": "With no family match, use `(?:claude|gpt|grok|gemini|composer)-[^`]+`\\.",
+      "replacement": "With no family match, use the first `arena runners` default in [Models](#models).",
+      "rationale": "Model names",
+      "files": "^skills/arena/SKILL\\.md$"
+    },
+    {
+      "regex": "use `(?:claude|gpt|grok|gemini|composer)-[^`]+`(?:(?:,| and|, and) `(?:claude|gpt|grok|gemini|composer)-[^`]+`)+\\.",
+      "replacement": "use the defaults in [Models](#models).",
+      "rationale": "Model names",
+      "files": "^skills/architect/SKILL\\.md$"
+    },
+    {
+      "regex": "use `(?:claude|gpt|grok|gemini|composer)-[^`]+`\\.",
+      "replacement": "use the default in [Models](#models).",
+      "rationale": "Model names",
+      "files": "^skills/swarm/SKILL\\.md$"
+    },
+    {
+      "regex": "\\(default `(?:claude|gpt|grok|gemini|composer)-[^`]+`\\)",
+      "replacement": "(default in poteto-mode's [Models](../SKILL.md#models))",
+      "rationale": "Model names",
+      "files": "^skills/poteto-mode/playbooks/"
+    },
+    {
+      "regex": "\\(default `(?:claude|gpt|grok|gemini|composer)-[^`]+`\\)",
+      "replacement": "(default in [Models](#models))",
+      "rationale": "Model names",
+      "files": "/SKILL\\.md$"
+    },
+    {
+      "regex": ", default `(?:claude|gpt|grok|gemini|composer)-[^`]+`",
+      "replacement": ", default in [Models](#models)",
+      "rationale": "Model names",
+      "files": "/SKILL\\.md$"
+    },
+    {
+      "regex": " \\| `(?:claude|gpt|grok|gemini|composer)-[^`]+` \\| `references/",
+      "replacement": " | default in [Models](#models) | `references/",
+      "rationale": "Model names",
+      "files": "^skills/reflect/SKILL\\.md$"
+    },
+    {
+      "regex": "Families go by prefix: .*?`composer-\\*`\\. A refused `composer-\\*` entry runs on (?:`[^`]+`|Reviewer B's default)\\.",
+      "replacement": "A model's family is the first segment of its ID's last `/` part, such as `claude`, `gpt`, or `grok`, whatever provider instance serves it.",
+      "rationale": "The sheet (family rule); a refused entry already runs on another target of its family"
+    },
+    {
+      "pattern": "omit Task `model`",
+      "replacement": "omit `target`",
+      "rationale": "The sheet (inherit-parent)"
+    },
+    {
+      "pattern": "the Task tool",
+      "replacement": "`delegate_task`",
+      "rationale": "Tool actions: Dispatch"
+    },
+    {
+      "pattern": "Task spawn",
+      "replacement": "`delegate_task` call",
+      "rationale": "Tool actions: Dispatch"
+    },
+    {
+      "pattern": "`Task`",
+      "replacement": "`delegate_task`",
+      "rationale": "Tool actions: Dispatch"
+    },
+    {
+      "pattern": "`run_in_background: true`",
+      "replacement": "`mode: \"async\"`",
+      "rationale": "Tool actions: Dispatch (async)"
+    },
+    {
+      "pattern": "`subagent_type: \"poteto-agent\"`",
+      "replacement": "a `poteto-agent` brief (poteto-mode's Subagents section)",
+      "rationale": "persona by brief (Subagent policy)"
+    },
+    {
+      "pattern": "create-skill",
+      "replacement": "skill-creator",
+      "rationale": "create-skill is a Cursor built-in; Codex ships skill-creator"
+    },
+    {
+      "regex": "(?<![\\w./<>-])pstack/skills/",
+      "replacement": "<plugin root>/skills/",
+      "rationale": "Lauren's repo-relative paths point into the installed plugin"
+    },
+    {
+      "files": "^skills/poteto-mode/scripts/worktree-audit\\.sh$",
+      "pattern": "# Transcripts dir: ~/.cursor/projects/<slugified-repo-path>/agent-transcripts.\nslug=$(printf '%s' \"$main_wt\" | sed 's#^/##; s#/#-#g')\ntranscripts=\"$HOME/.cursor/projects/$slug/agent-transcripts\"",
+      "replacement": "# T3 keeps chats in threads, not files, so LAST_CHAT stays empty and the\n# playbook checks each thread's worktreePath instead.\ntranscripts=\"\"",
+      "rationale": "Transcripts; Playbooks: Worktree cleanup. The script skips its scan when the directory is empty, and dropping the slug keeps it shellcheck-clean"
+    },
+    {
+      "pattern": "git show origin/main:",
+      "replacement": "cat <plugin root>/skills/",
+      "rationale": "the plan reads installed skills; the checker's marker moves with the template",
+      "files": "^skills/poteto-mode/scripts/check-plan\\.(?:mjs|test\\.ts)$"
+    },
+    {
+      "pattern": "/loop 1h",
+      "replacement": "hourly schedule_task",
+      "rationale": "the plan arms a schedule_task; the checker's marker moves with the template",
+      "files": "^skills/poteto-mode/scripts/check-plan\\.(?:mjs|test\\.ts)$"
     }
   ],
   "denylist": [
     {
-      "token": "worktree-audit.sh",
-      "hint": "the port excludes upstream's shell audit and ships skills/poteto-mode/scripts/worktree-audit.mjs; rewrite the command to run that"
-    },
-    {
-      "regex": "(?<!/)grok-",
-      "hint": "Cursor model slug; point at the Models section, or add a substitution rule for the phrase (a T3 target such as grok/grok-4.7 is allowed)"
-    },
-    {
-      "regex": "\\b(?:claude|gpt|gemini|composer)-[0-9a-z.-]*-(?:max|fast|xhigh|high|medium|low|thinking)\\b",
-      "hint": "Cursor model slug with an effort suffix; point at the Models section, or add a substitution rule for the phrase"
-    },
-    {
-      "token": "pstack-models.mdc",
-      "hint": "Cursor's rule file; the port's override sheet is pstack-models.md, at the path setup-pstack lists per runtime"
-    },
-    {
-      "token": "`verify` skill (UIs)",
-      "hint": "use the driver policy in poteto-mode/SKILL.md Non-negotiables"
-    },
-    {
-      "token": "`verify` for UIs",
-      "hint": "use the driver policy in poteto-mode/SKILL.md Non-negotiables"
-    },
-    {
-      "token": "control-cli",
-      "hint": "use the driver policy in poteto-mode/SKILL.md Non-negotiables; rewrite the sentence, don't token-swap"
-    },
-    {
-      "token": "control-ui",
-      "hint": "use the driver policy in poteto-mode/SKILL.md Non-negotiables; rewrite the sentence, don't token-swap"
-    },
-    {
-      "token": "AskQuestion",
-      "hint": "should have been substituted to AskUserQuestion; substitution rule failed to apply"
-    },
-    {
       "token": ".cursor/",
-      "hint": "Cursor config path survived; map it to the Claude Code equivalent"
+      "hint": "Cursor config path; name the T3 or harness path"
     },
     {
-      "token": "Cursor cloud agent",
-      "hint": "Claude Code runs subagents locally; the port isolates writers with worktrees"
+      "regex": "\\.mdc\\b|alwaysApply",
+      "hint": "Cursor rule file; T3 uses the model sheet"
     },
     {
-      "token": "cursor.com",
-      "hint": "Cursor product URL; check whether the sentence applies to Claude Code at all"
+      "regex": "\\bAskQuestion\\b",
+      "hint": "Cursor's question tool; ask the user, naming AskUserQuestion on Claude Code where a structured question matters"
     },
     {
-      "token": "/goal",
-      "hint": "Cursor's /goal has no Claude Code equivalent; the autopilot playbooks keep the objective in standing orders"
+      "regex": "`Task`|\\bTask (?:(?:tool|subagent|calls?|spawn|schema|response)\\b|`model`)|\\bvia Task\\b",
+      "hint": "Cursor's subagent tool; T3 dispatches with delegate_task"
     },
     {
-      "token": "create-skill",
-      "hint": "Cursor's built-in skill-authoring skill; Claude Code's equivalent is the plugin-dev:skill-development skill"
+      "token": "subagent_type",
+      "hint": "Cursor agent type; on T3 a persona is a delegate_task brief that reads <plugin root>/agents/<name>.md"
     },
     {
-      "regex": "\\bTask (?:subagent|tool|schema|spawn|`model`)",
-      "hint": "Cursor's subagent tool named bare; Claude Code's is the `Agent` tool. Add a substitution rule for the phrase"
+      "regex": "\\b(?:run|is)_background\\b",
+      "hint": "Cursor background flag; delegate_task takes mode: \"async\""
     },
     {
       "token": "generalPurpose",
-      "hint": "Cursor's built-in agent type; Claude Code's is \"general-purpose\""
+      "hint": "Cursor agent type; a delegate_task child with a role"
     },
     {
-      "token": "agent-transcripts",
-      "hint": "Cursor's per-workspace transcript directory; Claude Code keeps transcripts under ~/.claude/projects/"
+      "regex": "readonly(?::| strips|/Ask)|\\bAsk mode\\b",
+      "hint": "Cursor readonly mode; on T3 a read-only child gets a brief sentence"
     },
     {
-      "token": "environment: \"cloud\"",
-      "hint": "Cursor cloud-agent dispatch; Claude Code runs subagents locally and isolates writers with worktrees"
+      "regex": "agent-transcripts|the system prompt names",
+      "hint": "Cursor transcripts; read T3 threads with t3_thread_read"
     },
     {
-      "token": "is_background",
-      "hint": "Cursor-only agent frontmatter key; Claude Code sets run_in_background on each Agent call"
+      "regex": "(?:^|[\\s`(])/loop\\b(?! until)",
+      "hint": "Cursor /loop; schedule_task bound to this thread, or a watcher loop inside the turn"
     },
     {
-      "token": "cloud_base_branch",
-      "hint": "Cursor's cloud-agent base-branch parameter; the port checks the branch out in the worker's worktree"
+      "regex": "\\bcloud[- ](?:agents?|VMs?|workers?|work|default)\\b|cloud_base_branch|environment: \"|Cursor dashboard",
+      "hint": "Cursor cloud agents; delegate_task children in worktrees or t3_thread_launch threads"
     },
     {
-      "token": "environment: \"local\"",
-      "hint": "Cursor's agent environment parameter; Claude Code subagents all run on this machine"
+      "token": "create-skill",
+      "hint": "Cursor built-in; the harness's skill-authoring skill"
     },
     {
-      "token": "mcps/",
-      "hint": "Cursor's MCP directory; Claude Code lists MCP servers as tools named mcp__<server>__<name>"
+      "regex": "control-(?:ui|cli)",
+      "hint": "cursor-team-kit driver; the project's verify skill or T3's preview_* / device_* tools"
     },
     {
-      "token": "Application Support/Cursor",
-      "hint": "Cursor's application data; name Claude Code's own caches"
+      "regex": "cursor-team-kit|Thermos plugin",
+      "hint": "the port carries these skills in this plugin"
     },
     {
-      "token": "cloud-sleeper",
-      "hint": "Cursor's cloud wake chain; Claude Code's /loop schedules its own wake-up"
+      "regex": "(?<![\\w./<>-])pstack/skills/|origin/main:pstack/",
+      "hint": "Lauren's repo-relative path; use <plugin root>/skills/"
+    },
+    {
+      "regex": "(?<!/)grok-\\d",
+      "hint": "Cursor model slug; point at the Models section (a T3 target such as grok/grok-4.7 is allowed)"
+    },
+    {
+      "regex": "\\b(?:claude|gpt|gemini|composer)-[0-9a-z.-]*-(?:max|fast|xhigh|high|medium|low|thinking)\\b",
+      "hint": "Cursor model slug with an effort suffix; point at the Models section"
+    },
+    {
+      "regex": "\\bCursor\\b|cursor\\.com",
+      "hint": "Cursor product reference; check whether the sentence applies on T3"
+    },
+    {
+      "regex": "Custom Modes?\\b|\\bsidebar\\b|Agents Window|/add-plugin",
+      "hint": "Cursor UI; describe the T3 or harness equivalent"
+    },
+    {
+      "regex": "(?:^|[\\s`(])/goal\\b|\\bmcps/",
+      "hint": "Cursor-only mechanism"
+    },
+    {
+      "regex": "(?:^|[\\s`(])/visualize\\b",
+      "hint": "Cursor's canvas command; T3 renders a page inline with html_render"
     }
   ]
 }

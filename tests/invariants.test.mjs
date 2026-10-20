@@ -1,18 +1,12 @@
 // Proves each static layout invariant still fails when it should. A check
-// that quietly matches nothing looks identical to a pass, and that already
-// happened once (the 0.9.10 quad check hunted a retired slug for a whole
-// release), so every check gets a fixture that must trip it.
+// that quietly matches nothing looks identical to a pass, so every check gets
+// a fixture that must trip it.
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
-import { agentSkills, pluginAgentPaths, validatePluginLayout } from "../tools/generate.mjs";
-
-const shippedAgents = pluginAgentPaths(fileURLToPath(new URL("../plugins/pstack", import.meta.url))).map((p) =>
-  basename(p, ".md"),
-);
+import { agentSkills, validatePluginLayout } from "../tools/generate.mjs";
 
 function skill(root, name, front, body = "body\n") {
   mkdirSync(join(root, "skills", name), { recursive: true });
@@ -20,11 +14,6 @@ function skill(root, name, front, body = "body\n") {
     join(root, "skills", name, "SKILL.md"),
     `---\nname: ${name}\ndescription: fixture\n${front}---\n\n${body}`,
   );
-}
-
-function agent(root, name) {
-  mkdirSync(join(root, "agents"), { recursive: true });
-  writeFileSync(join(root, "agents", `${name}.md`), `---\nname: ${name}\ndescription: fixture\n---\n`);
 }
 
 const fixtures = [];
@@ -35,8 +24,8 @@ afterEach(() => {
 function plugin(mutate = () => {}) {
   const root = mkdtempSync(join(tmpdir(), "invariants-"));
   fixtures.push(root);
-  skill(root, "good", "");
-  skill(root, "principle-good", "user-invocable: false\n");
+  skill(root, "poteto-mode", "");
+  skill(root, "tdd", "disable-model-invocation: true\n");
   mutate(root);
   return root;
 }
@@ -47,7 +36,7 @@ const check = (root) => {
 };
 
 describe("static plugin invariants", () => {
-  test("a clean tree passes", () => {
+  test("a clean tree passes, with upstream's manual-only flag on every skill but poteto-mode", () => {
     expect(() => check(plugin())).not.toThrow();
   });
 
@@ -56,104 +45,49 @@ describe("static plugin invariants", () => {
     expect(() => check(root)).toThrow("plugins/pstack/commands/ exists");
   });
 
-  test("disable-model-invocation on a skill fails and names the file", () => {
-    const root = plugin((r) => skill(r, "flagged", "disable-model-invocation: true\n"));
-    expect(() => check(root)).toThrow(/skills\/flagged\/SKILL\.md: disable-model-invocation: true breaks/);
+  test("an Agent Plugins root manifest fails", () => {
+    const root = plugin((r) => writeFileSync(join(r, "plugin.json"), "{}\n"));
+    expect(() => check(root)).toThrow("plugins/pstack/plugin.json exists; Codex would truncate every injected SKILL.md");
   });
 
-  test("a principle leaf missing user-invocable: false fails", () => {
-    const root = plugin((r) => skill(r, "principle-visible", ""));
-    expect(() => check(root)).toThrow(/principle-visible\/SKILL\.md: principle leaves carry user-invocable: false/);
-  });
-
-  test("a principle leaf carrying disable-model-invocation fails", () => {
-    const root = plugin((r) => skill(r, "principle-dead", "user-invocable: false\ndisable-model-invocation: true\n"));
-    expect(() => check(root)).toThrow(/principle-dead\/SKILL\.md: disable-model-invocation/);
-  });
-
-  test("a skill dispatching a plugin agent by its bare name fails and names the site", () => {
-    const root = plugin((r) => {
-      agent(r, "poteto-agent");
-      skill(r, "caller", "", 'Spawn with `subagent_type: "poteto-agent"`.\n');
-    });
+  test("disable-model-invocation on poteto-mode fails and names the file", () => {
+    const root = plugin((r) => skill(r, "poteto-mode", "disable-model-invocation: true\n"));
     expect(() => check(root)).toThrow(
-      'skills/caller/SKILL.md:6: subagent_type: "poteto-agent" (use "pstack:poteto-agent")',
+      /skills\/poteto-mode\/SKILL\.md: disable-model-invocation: true stops the session-start hook from invoking poteto-mode/,
     );
   });
 
-  test.each([
-    "subagent_type: poteto-agent",
-    "subagent_type: 'poteto-agent'",
-    "subagent_type: `poteto-agent`",
-    'subagent_type:"poteto-agent"',
-    '"subagent_type": "poteto-agent"',
-  ])("a bare dispatch spelled %s fails and names the site", (line) => {
-    const root = plugin((r) => {
-      agent(r, "poteto-agent");
-      skill(r, "caller", "", `Spawn with ${line}.\n`);
-    });
-    expect(() => check(root)).toThrow('skills/caller/SKILL.md:6: subagent_type: "poteto-agent" (use "pstack:poteto-agent")');
+  test("a tree without poteto-mode fails", () => {
+    const root = plugin((r) => rmSync(join(r, "skills", "poteto-mode"), { recursive: true }));
+    expect(() => check(root)).toThrow("plugins/pstack/skills has no poteto-mode skill");
   });
 
-  test.each([
-    "- `subagent_type`: `NAME`",
-    'Agent(subagent_type="NAME", prompt=...)',
-    "**subagent_type**: NAME",
-    '{\\"subagent_type\\": \\"NAME\\"}',
-    "'subagent_type': 'NAME'",
-    '"subagent_type" : "NAME"',
-    "subagent_type: **NAME**",
-    'Use\\nsubagent_type: "NAME"',
-    '"prompt": "Dispatch:\\nsubagent_type: \\"NAME\\""',
-  ])("a bare dispatch spelled %s fails for every shipped agent", (spelling) => {
-    expect(shippedAgents.length).toBeGreaterThan(0);
-    const root = plugin((r) => shippedAgents.forEach((name) => agent(r, name)));
-    for (const name of shippedAgents) {
-      skill(root, "caller", "", `${spelling.replace("NAME", name)}\n`);
-      expect(() => check(root)).toThrow(`skills/caller/SKILL.md:6: subagent_type: "${name}" (use "pstack:${name}")`);
-    }
-  });
-
-  test.each([
-    'subagent_type: "pstack:poteto-agent"',
-    "subagent_type: pstack:poteto-agent",
-    "subagent_type: `pstack:poteto-agent`",
-    'subagent_type: "poteto-agent-high"',
-    "subagent_type: poteto-agent_v2",
-    "subagent_type: poteto-agent.local",
-    "subagent_type: poteto-agentX",
-    "subagent_type: poteto-agent.2",
-    "subagent_type: poteto-agent-high_v2",
-    "subagent_type: poteto-agent-high.local",
-    "my_subagent_type: poteto-agent",
-    "my\\_subagent_type: poteto-agent",
-    "presubagent_type: poteto-agent",
-  ])("a namespaced, longer, or differently keyed dispatch %s passes", (line) => {
+  test("a skill whose name is not its directory fails", () => {
     const root = plugin((r) => {
-      agent(r, "poteto-agent");
-      skill(r, "caller", "", `Spawn with ${line}.\n`);
+      skill(r, "how", "");
+      writeFileSync(join(r, "skills/how/SKILL.md"), "---\nname: How\ndescription: fixture\n---\n");
     });
-    expect(() => check(root)).not.toThrow();
+    expect(() => check(root)).toThrow('frontmatter name "How" != directory "how"');
   });
 
   test("an unresolved sync conflict in any plugin file fails and names each marker line", () => {
     const root = plugin((r) => {
-      mkdirSync(join(r, "skills/good/scripts"), { recursive: true });
+      mkdirSync(join(r, "skills/tdd/scripts"), { recursive: true });
       writeFileSync(
-        join(r, "skills/good/scripts/run.sh"),
+        join(r, "skills/tdd/scripts/run.sh"),
         "echo\n<<<<<<< local\necho port\n||||||| base\necho\n=======\necho upstream\n>>>>>>> upstream\n",
       );
     });
     expect(() => check(root)).toThrow(
-      /skills\/good\/scripts\/run\.sh:2: <<<<<<< local\n.*run\.sh:4: \|{7} base\n.*run\.sh:6: =======\n.*run\.sh:8: >>>>>>> upstream/,
+      /skills\/tdd\/scripts\/run\.sh:2: <<<<<<< local\n.*run\.sh:4: \|{7} base\n.*run\.sh:6: =======\n.*run\.sh:8: >>>>>>> upstream/,
     );
   });
 
-  test("the body of a skill may mention the flag in prose", () => {
+  test("the body of poteto-mode may mention the flag in prose", () => {
     const root = plugin();
     writeFileSync(
-      join(root, "skills/good/SKILL.md"),
-      "---\nname: good\ndescription: fixture\n---\n\nNever set disable-model-invocation: true on a skill.\n",
+      join(root, "skills/poteto-mode/SKILL.md"),
+      "---\nname: poteto-mode\ndescription: fixture\n---\n\nNever set disable-model-invocation: true on this skill.\n",
     );
     expect(() => check(root)).not.toThrow();
   });

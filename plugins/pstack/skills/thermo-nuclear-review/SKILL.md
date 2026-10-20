@@ -1,11 +1,10 @@
 ---
 name: thermo-nuclear-review
 description: Comprehensive security and correctness audit of a branch's changes. Use for thermo nuclear, thermonuclear, or deep review requests, or branch/PR diff audits focused on bugs, breaking changes, security issues, devex regressions, and feature-gate leaks.
+disable-model-invocation: true
 ---
 
 # Thermo Nuclear Review
-
-On T3, read the [platform mapping](../poteto-mode/references/t3-tools.md), including its per-skill notes, before following this skill.
 
 Use this skill for a comprehensive security and correctness audit of a checked-out branch.
 
@@ -41,9 +40,9 @@ If you report issues as High priority when they are not in fact high priority / 
 NEVER misreport the priority / importance of issues. Be extremely thorough in tracing issues end-to-end to gain complete, and total confidence before reporting.
 
 # Final Response
-IF you have medium-to-high priority / risk findings, and there is a PR for this branch, then check the PR/MR discussion using gh/glab cli to see if there are comments from a review bot or others present.
+IF you have medium-to-high priority / risk findings, and there is a PR for this branch, then check the PR/MR discussion using gh/glab cli to see if there are comments from BugBot or others present.
 If so, take their findings into account. If they found issues you missed, evaluate them to determine if they are valid and include them in your report. If they found some of the same issues you did, see if there is anything from their findings that are worth incorporating into your response.
-Flag issues found by a review bot or others in the PR/MR discussion that you include in your report.
+Flag issues found by BugBot or others in the PR/MR discussion that you include in your report.
 
 
 # Critical Rules

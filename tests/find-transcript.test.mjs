@@ -1,14 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 
-import { candidates, findTranscript, openingPrompt } from "../plugins/pstack/skills/reflect/scripts/find-transcript.mjs";
+import { candidates, findTranscript, openingPrompt, sessionTranscript } from "../plugins/pstack/skills/reflect/scripts/find-transcript.mjs";
 import { removeDuring } from "./remove-during.mjs";
 
 const script = join(import.meta.dir, "../plugins/pstack/skills/reflect/scripts/find-transcript.mjs");
 const noNode = spawnSync("node", ["--version"]).status !== 0;
+const skill = readFileSync(join(import.meta.dir, "../plugins/pstack/skills/reflect/SKILL.md"), "utf8");
 
 const meta = JSON.stringify({ type: "bridge-session", sessionId: "abc" });
 const summary = JSON.stringify({ type: "summary", summary: "earlier work" });
@@ -294,6 +295,87 @@ describe("find-transcript", () => {
     );
     await expect(openingPrompt(rollout)).rejects.toThrow(/Codex rollout/);
     await expect(findTranscript(dir, "ship the release")).rejects.toThrow(/Codex rollout/);
+  });
+
+  // Step 1's command exactly as reflect/SKILL.md gives it, with its placeholders
+  // filled in and the plugin installed under a path with a space.
+  function skillCommand(dir, encodedCwd, fragment) {
+    const command = skill.match(/^```bash\n(node "<plugin root>\/skills\/reflect\/scripts\/find-transcript\.mjs" .*)$/m)?.[1];
+    if (command === undefined) throw new Error("reflect/SKILL.md has no find-transcript command");
+    const plugin = join(dir, "plugin install");
+    symlinkSync(join(import.meta.dir, "../plugins/pstack"), plugin);
+    return command
+      .replace("<plugin root>", plugin)
+      .replace("<encoded-cwd>", encodedCwd)
+      .replace("<opening prompt fragment>", fragment);
+  }
+
+  test("sessionTranscript returns the session's flat or nested file, never a subagent's", () => {
+    const dir = tempDir();
+    const flatId = "11111111-2222-3333-4444-555555555555";
+    const nestedId = "66666666-7777-8888-9999-aaaaaaaaaaaa";
+    const flat = transcript(dir, `${flatId}.jsonl`, [meta], 100);
+    transcript(dir, `${flatId}/subagents/agent-a1.jsonl`, [meta], 200);
+    const nested = transcript(dir, `${nestedId}/${nestedId}.jsonl`, [meta], 100);
+    expect(sessionTranscript(dir, flatId)).toBe(flat);
+    expect(sessionTranscript(dir, nestedId)).toBe(nested);
+    expect(sessionTranscript(dir, "bbbbbbbb-cccc-dddd-eeee-ffffffffffff")).toBeNull();
+    expect(sessionTranscript(dir, `../${flatId}`)).toBeNull();
+    expect(sessionTranscript(dir, "")).toBeNull();
+  });
+
+  test("step 1's command picks this session's file over siblings that share its opening prompt", () => {
+    const dir = tempDir();
+    const home = join(dir, "home");
+    const projects = join(home, ".claude/projects/-work-repo");
+    const id = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
+    const prompt = [meta, user("Ship the release for alpha/beta")];
+    const own = transcript(projects, `${id}.jsonl`, prompt, 100);
+    transcript(projects, `${id}/subagents/agent-a1.jsonl`, prompt, 200);
+    transcript(projects, "aaaaaaaa-0000-4000-8000-000000000001/aaaaaaaa-0000-4000-8000-000000000001.jsonl", prompt, 300);
+    const sibling = transcript(projects, "aaaaaaaa-0000-4000-8000-000000000002.jsonl", prompt, 400);
+    const command = skillCommand(dir, "-work-repo", "Ship the release");
+    const run = (env) => spawnSync("sh", ["-c", command], { encoding: "utf8", env: { PATH: process.env.PATH, HOME: home, ...env } });
+    const exact = run({ CLAUDE_CODE_SESSION_ID: id });
+    expect(exact.stderr).toBe("");
+    expect(exact.stdout.trim()).toBe(own);
+    expect(run({}).stdout.trim()).toBe(sibling);
+  });
+
+  // Claude Code under --no-session-persistence exports the ID but writes no file.
+  test("step 1's command exits 1 instead of returning a sibling when this session has no file", () => {
+    const dir = tempDir();
+    const home = join(dir, "home");
+    const projects = join(home, ".claude/projects/-work-repo");
+    const prompt = [meta, user("Ship the release for alpha/beta")];
+    transcript(projects, "aaaaaaaa-0000-4000-8000-000000000002.jsonl", prompt, 400);
+    const command = skillCommand(dir, "-work-repo", "Ship the release");
+    const env = { PATH: process.env.PATH, HOME: home, CLAUDE_CODE_SESSION_ID: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d" };
+    const missing = spawnSync("sh", ["-c", command], { encoding: "utf8", env });
+    expect(missing.status).toBe(1);
+    expect(missing.stdout).toBe("");
+    expect(missing.stderr).toBe(
+      `no transcript under ${projects} is named for session 0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d\n`,
+    );
+  });
+
+  test("step 1's command searches CLAUDE_CONFIG_DIR's projects, else ~/.claude's", () => {
+    const dir = tempDir();
+    const home = join(dir, "home");
+    const pool = join(dir, "claude pool");
+    const pooled = transcript(join(pool, "projects/-work-repo"), "a/a.jsonl", [meta, user("ship the release")], 100);
+    const fallback = transcript(join(home, ".claude/projects/-work-repo"), "b.jsonl", [meta, user("ship the release")], 200);
+    const command = skillCommand(dir, "-work-repo", "ship the");
+    const run = (env) =>
+      spawnSync("sh", ["-c", command], { encoding: "utf8", env: { PATH: process.env.PATH, HOME: home, ...env } });
+    const redirected = run({ CLAUDE_CONFIG_DIR: pool });
+    expect(redirected.stderr).toBe("");
+    expect(redirected.stdout.trim()).toBe(pooled);
+    for (const env of [{}, { CLAUDE_CONFIG_DIR: "" }]) {
+      const defaulted = run(env);
+      expect(defaulted.status).toBe(0);
+      expect(defaulted.stdout.trim()).toBe(fallback);
+    }
   });
 
   test("the CLI prints the path and exits 1 when nothing matches", () => {

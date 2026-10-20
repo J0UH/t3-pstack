@@ -1,94 +1,18 @@
 import { describe, expect, test } from "bun:test";
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import {
-  agentSkills,
-  PORTABLE_ASSETS,
-  plan,
-  problems,
-  publicSkills,
-  resolveModels,
-} from "../tools/generate.mjs";
-import { codexModelNamesSection } from "../tools/runtimes.mjs";
-import { validateProsePaths, validateSkillsTree, walk } from "../tools/validate-skills.mjs";
+import { agentSkills, OWNED_DIRS, parseFrontmatter, PORTABLE_ASSETS, plan, problems } from "../tools/generate.mjs";
+import { validateSkillsTree, walk } from "../tools/validate-skills.mjs";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const skillsDir = join(repoRoot, "plugins/pstack/skills");
-const requiredPortableFiles = [
-  "poteto-mode/references/agents/comment-sicko.md",
-  "poteto-mode/references/licenses/LICENSE",
-  "poteto-mode/references/licenses/LICENSE-cursor-team-kit",
-  "poteto-mode/references/licenses/LICENSE-thermos",
-  "poteto-mode/references/licenses/NOTICE.md",
-];
 
 describe("shared Agent Skills tree", () => {
-  test("public skills include poteto-mode and exclude every principle leaf", () => {
-    const names = publicSkills(skillsDir);
-    expect(names).toContain("poteto-mode");
-    expect(names.some((n) => n.startsWith("principle-"))).toBe(false);
-  });
-
   test("the working tree breaks no cross-file contract", () => {
     expect(problems(repoRoot)).toEqual([]);
-  });
-
-  test("prose naming a real plugin file outside the skills tree fails the boundary check", () => {
-    const plugin = mkdtempSync(join(tmpdir(), "pstack-prose-paths-"));
-    const root = join(plugin, "skills");
-    try {
-      mkdirSync(join(plugin, "agents"), { recursive: true });
-      writeFileSync(join(plugin, "agents/comment-sicko.md"), "# agent\n");
-      const skill = join(root, "example");
-      mkdirSync(skill, { recursive: true });
-      for (const prose of [
-        "Read `agents/comment-sicko.md` in full first.",
-        "Read `./agents/comment-sicko.md` in full first.",
-        "The `agents/comment-sicko.md` file ships only with the plugin.",
-        "Open `../../agents/comment-sicko.md`.",
-      ]) {
-        writeFileSync(join(skill, "SKILL.md"), `# Example\n\n${prose}\n`);
-        expect(() => validateProsePaths(root)).toThrow("agents/comment-sicko.md is not installed with the skills tree");
-      }
-    } finally {
-      rmSync(plugin, { recursive: true, force: true });
-    }
-  });
-
-  test("prose paths that resolve inside the tree or to nothing are left alone", () => {
-    const plugin = mkdtempSync(join(tmpdir(), "pstack-prose-allowed-"));
-    const root = join(plugin, "skills");
-    try {
-      mkdirSync(join(plugin, "hooks"), { recursive: true });
-      mkdirSync(join(root, "mode/playbooks"), { recursive: true });
-      mkdirSync(join(root, "mode/references"), { recursive: true });
-      writeFileSync(join(root, "mode/playbooks/babysit.md"), "# playbook\n");
-      writeFileSync(
-        join(root, "mode/references/triage.md"),
-        [
-          "# Reference",
-          "",
-          "Read `../playbooks/babysit.md` first.",
-          "Write the log to `/tmp/<slug>-resume.md` and run `/setup-pstack`.",
-          "Edit `plugins/pstack/models.json`, then rerun `tools/generate.mjs`.",
-          "Cursor keeps rules in `.cursor/rules/`; Claude Code has no `hooks/nope.md`.",
-        ].join("\n"),
-      );
-      expect(() => validateProsePaths(root)).not.toThrow();
-    } finally {
-      rmSync(plugin, { recursive: true, force: true });
-    }
   });
 
   test("walk returns a sorted listing regardless of directory order", () => {
@@ -117,10 +41,46 @@ describe("shared Agent Skills tree", () => {
 
     try {
       expect(() => validateSkillsTree(root)).not.toThrow();
-      expect(() => validateProsePaths(root)).not.toThrow();
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  test("a bare-word target such as (url) is a template placeholder, not a missing file", () => {
+    const root = mkdtempSync(join(tmpdir(), "pstack-skills-links-"));
+    mkdirSync(join(root, "example"));
+    writeFileSync(join(root, "example/SKILL.md"), "Source: [PR #123](url) / ticket ID / file:line.\n[gone](notes)\n");
+    try {
+      expect(() => validateSkillsTree(root)).not.toThrow();
+      writeFileSync(join(root, "example/SKILL.md"), "[gone](notes.md)\n");
+      expect(() => validateSkillsTree(root)).toThrow("example/SKILL.md -> notes.md (missing)");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("every skill the session-start routing tells the model to invoke is model-invocable", () => {
+    const routing = readFileSync(join(repoRoot, "plugins/pstack/hooks/session-start-context.md"), "utf8");
+    const named = [...routing.matchAll(/`t3-pstack:([a-z0-9-]+)`/g)].map((m) => m[1]);
+    expect(named).toContain("poteto-mode");
+    for (const name of named) {
+      const { data } = parseFrontmatter(readFileSync(join(skillsDir, name, "SKILL.md"), "utf8"));
+      expect(data["disable-model-invocation"], `${name} is invoked by the routing text`).not.toBe(true);
+    }
+  });
+
+  // Codex 0.162.1 cuts the middle of a shell read whose output passes the
+  // read's budget at 4 bytes a token, and caps a budget at the model's
+  // 10000-token tool output limit. A tenth stays spare for what the call
+  // prints around the file.
+  test("poteto-mode fits the one Codex read that it and the routing text ask for", () => {
+    const routing = readFileSync(join(repoRoot, "plugins/pstack/hooks/session-start-context.md"), "utf8");
+    const skill = readFileSync(join(skillsDir, "poteto-mode", "SKILL.md"), "utf8");
+    const budget = (text) => Number(text.match(/`max_output_tokens: (\d+)`/)?.[1]);
+    const asked = budget(skill);
+    expect(budget(routing)).toBe(asked);
+    expect(asked).toBeLessThanOrEqual(10000);
+    expect(Buffer.byteLength(skill)).toBeLessThanOrEqual(asked * 4 * 0.9);
   });
 
   test("a bare missing markdown target fails the boundary check", () => {
@@ -198,52 +158,15 @@ describe("shared Agent Skills tree", () => {
     }
   });
 
-  test("every vendored subagent definition has a skill that tells Codex to read it", () => {
-    const prose = walk(skillsDir)
-      .filter((file) => file.endsWith(".md"))
-      .map((file) => readFileSync(file, "utf8"))
-      .join("\n");
-    const vendored = PORTABLE_ASSETS.map(({ target }) => target).filter((target) => target.includes("/agents/"));
-    expect(vendored.length).toBeGreaterThan(0);
-    expect(vendored.filter((target) => !prose.includes(target))).toEqual([]);
-  });
-
-  test("every required portable asset lives inside the skills tree", () => {
-    for (const file of requiredPortableFiles) {
-      expect(existsSync(join(skillsDir, file))).toBe(true);
-    }
-  });
-
   test("the plan copies each portable asset from its source into a directory it owns", () => {
     const { files, ownedDirs } = plan(repoRoot);
     for (const { source, target } of PORTABLE_ASSETS) {
-      expect(files[`plugins/pstack/skills/${target}`]).toBe(readFileSync(join(repoRoot, source), "utf8"));
-      expect(ownedDirs).toContain(`plugins/pstack/skills/${dirname(target)}`);
+      expect(files[`plugins/pstack/skills/poteto-mode/references/licenses/${target}`]).toBe(readFileSync(join(repoRoot, source), "utf8"));
+      expect(ownedDirs).toEqual(OWNED_DIRS);
+      expect(dirname(`plugins/pstack/skills/poteto-mode/references/licenses/${target}`)).toBe(OWNED_DIRS[0]);
     }
   });
 
-  test("linked skills keep their own resources and sibling principle leaves", () => {
-    const root = mkdtempSync(join(tmpdir(), "pstack-agent-skills-"));
-    const installed = join(root, "unrelated-home", ".agents", "skills");
-    mkdirSync(installed, { recursive: true });
-
-    try {
-      for (const { name } of agentSkills(skillsDir)) {
-        symlinkSync(join(skillsDir, name), join(installed, name), "dir");
-      }
-
-      const poteto = join(installed, "poteto-mode");
-      for (const file of [
-        join(poteto, "SKILL.md"),
-        join(poteto, "references", "codex-tools.md"),
-        join(poteto, "..", "principle-model-the-domain", "SKILL.md"),
-      ]) {
-        expect(readFileSync(file, "utf8").length).toBeGreaterThan(0);
-      }
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
 });
 
 describe("agentSkills reads frontmatter as YAML", () => {
@@ -274,28 +197,5 @@ describe("agentSkills reads frontmatter as YAML", () => {
 
   test("a CRLF file yields its name", () => {
     expect(readSkill("crlf", "---\r\nname: crlf\r\ndescription: d\r\n---\r\n\r\nbody\r\n").name).toBe("crlf");
-  });
-
-  test("user-invocable: false with a trailing space reads as not user-invocable", () => {
-    expect(readSkill("spaced", "---\nname: spaced\ndescription: d\nuser-invocable: false \n---\n").userInvocable).toBe(
-      false,
-    );
-  });
-});
-
-describe("Codex model names", () => {
-  test("names a strongest Codex model for the roles that default to it on Claude", () => {
-    const raw = JSON.parse(readFileSync(join(repoRoot, "plugins/pstack/models.json"), "utf8"));
-    const oneOff = raw.roles.map((r) => (r.role === "swarm workers" ? { ...r, models: ["haiku"] } : r));
-    const section = codexModelNamesSection(resolveModels({ ...raw, roles: oneOff }));
-    const strongestLine = section.split("\n").find((line) => line.includes("strongest Claude model"));
-
-    expect(strongestLine).not.toContain("swarm workers");
-
-    expect(strongestLine).toContain(`\`${raw.codex.strongest}\``);
-    for (const role of ["bug-fix", "perf-issue", "hillclimb", "strongest judgment"]) {
-      expect(section).toContain(role);
-    }
-    for (const family of raw.available) expect(section).not.toContain(`\`${family}\``);
   });
 });

@@ -1,35 +1,41 @@
 # Contributing
 
-Thanks for helping out. This repo is a **port**, not an original work: the `skills/` tree tracks [upstream pstack](https://github.com/cursor/plugins/tree/main/pstack) and gets synced forward periodically. That one fact shapes most of what follows.
+Thanks for helping out. This repo is a **port**, not an original work: the skills tree tracks [Lauren Tan's pstack](https://github.com/cursor/plugins/tree/main/pstack) and is synced forward from it. That one fact shapes most of what follows.
 
 [CONTEXT.md](CONTEXT.md) is the glossary for the terms below.
 
 ## The sync boundary
 
-Upstream owns skill content. This port owns the Cursor-to-Claude-Code translation. It also carries named forks, each declared in [`tools/forks.json`](tools/forks.json) as a `port-feature` (Claude Code, Codex, Pi, or GitHub Copilot mechanics upstream cannot carry) or a `policy` (a workflow change the port chose to keep).
+Upstream owns the skill text. This port owns the rewrite of upstream's Cursor mechanics into their T3 form, and nothing else. The rewrite has two parts:
 
-Both kinds of `SKILL.md` change land here. Upstream rarely merges pull requests from outside its own team, so this port does not ask you to land a change there first. Before changing a `SKILL.md`, work out which kind yours is:
+- **Substitutions.** [`tools/substitutions.json`](tools/substitutions.json) rewrites each upstream sentence that names a Cursor mechanism: the `Task` tool, `subagent_type`, model slugs, the `pstack-models.mdc` rule, cloud agents, `/loop`, Cursor paths. Most T3 behavior the port adds, such as the dispatch ledger or the review loop, is an anchored insert: a rule whose pattern is an upstream sentence and whose replacement keeps that sentence and appends the T3 text. A substitution leaves upstream's later edits elsewhere in the file mechanical, so the port prefers it to a fork. Each rule's `rationale` names why it exists, and most cite the section of t3-pstack 1.0.14's `t3-tools.md` it replaces.
+- **Forks.** [`tools/forks.json`](tools/forks.json) declares each file the port keeps in its own form, with a `kind`, a one-sentence `why`, the `since` release, and an `upstream` status. Today that is setup-pstack, which writes the T3 model sheet, the hook points of the watch-pr settle overlay, the files that carry the rules and watch-pr fixes restored from Michael Denyer's pstack-claude, and the worktree audit and cleanup playbook, which fix [cursor/plugins#449](https://github.com/cursor/plugins/issues/449). Every upstream change to a forked file needs a person to merge it, so a fork is the last resort.
 
-- **Fixing the port.** A Cursor primitive that resolves wrong on Claude Code, a broken cross-reference, a stale model slug. Open a PR.
-- **Changing what a skill does.** New steps, a different workflow, reworded guidance. Open a PR here too. The port keeps the change as a `policy` fork, and every later sync merges it three ways against upstream's new text. Keep the edit small and in one place, because a wide rewrite conflicts each time upstream touches the same lines, and someone has to settle the change again under time pressure.
+The port also owns files upstream does not have: the plugin manifests, the session-start hooks and their routing text, `models.json`, the sheet checker `t3-sheet.mjs`, the watch-pr settle overlay (`settle.ts`), and the transcript lookups reflect uses. The sync lists them as port-only.
 
-Declare each file your change forks in `tools/forks.json` in the same PR, so the next sync knows it is deliberate and not drift. Set the entry's `upstream` field to `not-proposed`, or to the URL of an upstream PR or issue if you opened one.
+Before changing a file under `plugins/pstack/skills` or `plugins/pstack/agents`, work out which kind of change it is:
 
-Each substitution rule in [`tools/substitutions.json`](tools/substitutions.json) has a `rationale` field that gives its reason. If you add a rule, fill in its `rationale` in the same PR.
+- **Fixing the T3 form.** A rewritten sentence that resolves wrong on T3, or a Cursor mechanism a rule missed. Change or add the rule in `tools/substitutions.json`, then regenerate (below). Never edit a derived file by hand, because the sync check fails on it.
+- **Changing what a skill does.** New steps, a different workflow, reworded guidance. That belongs upstream. The port adds behavior only where T3 needs it, as an anchored insert with a reason, or as a declared fork when no insert can carry it.
 
 ### Running a sync
 
 ```shell
-bun tools/sync.mjs pstack <new-upstream-sha>
+bun tools/sync.mjs <component> <upstream-sha> [--dry-run] [--bootstrap] [--clone <dir>]
 ```
 
-`tools/upstream.json` pins the current upstream SHA per component; `tools/substitutions.json` holds the mechanical Cursor-to-Claude rewrites and a denylist of Cursor-isms that need a rewritten sentence rather than a token swap. A rewrite matches a literal `pattern` or a `regex`, optionally only in files whose upstream-relative path matches `files`, and carries a literal `replacement` and a `rationale`; a denylist entry is a literal `token` or a `regex`. Rewrites run in order, each on the output of the ones before it, so a pattern goes above any shorter pattern it contains. The tool fails on a rule in the reverse order, on an unknown field, and on a rule without exactly one matcher. Match a shape, such as a backticked model slug, rather than one version of it, so an upstream model bump needs no new rule. The tool fetches both upstream revisions and derives each upstream file into its port form: the substitutions, then `deriveSkill` in `tools/generate.mjs`. It sets a skill's or plugin agent's `name` to its directory or file name, drops the Cursor-only `mode`, `icon`, `color`, `reminder`, and `is_background` keys, and drops `disable-model-invocation` (or swaps it for `user-invocable: false` on a `principle-*` leaf). Then it applies the generator's stamps, appending a `## Models` section where upstream has none. It writes files whose only local differences came from upstream (new files included), deletes files upstream removed that the port never edited in text or mode, and runs `git merge-file` on the rest: a file the port forked that upstream left alone (its text or only its mode) is counted as forked and left alone, non-overlapping edits are merged and written, and a real conflict is written with git's `<<<<<<< local`, `=======`, and `>>>>>>> upstream` markers and listed with its hunk count. A written file takes upstream's file mode, except that a merged or conflicted file keeps the port's mode when upstream left the mode alone. Mode here means what git records, executable or not. A write grants no permission that the file's own bits or your umask withhold. A new file is created through the umask. An existing file changes only when its mode has to, and then only in its execute bits, which are set where the file is readable or all cleared. An upstream change to the executable bit alone is written too. Symlinks, upstream's or the port's at an upstream path or at a directory above one, and files upstream deleted that the port had edited join the same conflicts list under their own reason. A deleted file the port had edited stays, and prints under the pinned summary as now port-only, so the CHANGES.md entry can record that decision. The tool never follows or writes through a symlink on either side. An upstream link's target can sit outside the clone, and writing through a port link would change or create its target. A file that differs three ways cannot carry markers when upstream's or the port's copy is binary, so it fails the run with its path: replace it with upstream's version or add it to `exclude`, then rerun. A port path in the way of a file upstream writes also fails the run, before any write, with the port's path: a file where upstream has a directory, a directory where upstream has a file, or an entry spelled another way that the filesystem treats as the same name, as the default macOS filesystem does for case and Unicode normalisation. Rename or delete it, then rerun. Any denylist token in a written file, conflict markers included, fails the run with the file, line, and hint — add a substitution rule or rewrite the sentence, then rerun. A failed run writes nothing. The pin advances only on success, and a run with conflicts succeeds: the generator fails on any conflict-marker line under `plugins/pstack`, so resolve every hunk before you commit. Write the CHANGES.md entry from the printed report, then run the generator and the tests as usual.
+`tools/upstream.json` pins the upstream SHA per component (`pstack`, the six carried `cursor-team-kit` skills, and `thermos`) and lists the upstream paths the port excludes. The tool derives each upstream file into its port form: the substitutions in order, then `deriveT3` in `tools/derive-t3.mjs`, which sets a skill's or agent's `name` to its directory or file name, drops Cursor-only frontmatter keys, drops `disable-model-invocation` from `poteto-mode` alone, and stamps the regions rendered from `models.json`. Then it compares old upstream, new upstream, and the port's copy: a file only upstream changed is written, a file only the port changed is a fork, and a file both changed is merged with `git merge-file`, with a conflict written as git's markers.
 
-`--dry-run` reports without writing. The tool takes the component, the SHA, and `--dry-run`, and any other argument exits 2 naming it, so a mistyped flag never runs a real sync. Passing the pinned SHA itself under `--dry-run` prints the ownership map. Every file under the forked count is one the port has forked, nothing is written or conflicted, and everything else syncs clean. Each forked file prints with its changed lines against the derived upstream text, largest first, above a total, and a fork that differs only in file mode prints `mode`. The `port-only` list names every file under the component's local path that no component carries upstream at its pin, excluded paths aside.
+A rule matches a literal `pattern` or a `regex`, optionally only in files whose upstream-relative path matches `files`, and carries a literal `replacement` and a `rationale`. Rules run in order, each on the output of the ones before it, so a pattern goes above any shorter pattern it contains, and the tool fails on a rule in the reverse order. A run fails, and writes nothing, on any of these:
 
-`tools/forks.json` declares every fork under its component, keyed by repo-relative path. Each entry has a `kind` (`port-feature` or `policy`), a one-sentence `why` naming the mechanism, the `since` release the fork first shipped in, and an `upstream` status: `not-proposed`, or the URL of the upstream PR or issue. The ownership map prints each fork's kind beside its count. A forked, merged, or conflicted path with no entry fails the run, dry runs included, and a real run then writes nothing. Add the entry in the PR that forks the file. An entry whose path is not forked or no longer exists fails a run at the pinned SHA, which is the CI check, and the run writes nothing. So does an upstream file the port deleted without adding it to `exclude`, since a sync to a new SHA would write it back. On a sync to a new SHA the same entry only warns, because upstream absorbed the fork in that run; delete the entry in the sync's PR.
+- a denylist term in a derived file, which needs a new rule or a rewritten sentence;
+- a fork, a merge, or a conflict on a path `tools/forks.json` does not declare;
+- a rule that matches nothing in the derived trees, because upstream reworded the sentence it anchored on and the T3 text it carried would silently disappear;
+- a binary file that differs three ways, or a port path that collides with an upstream one.
 
-When a clean merge matches the new upstream text and mode, the sync reports it as `updated`. Any existing fork declaration becomes stale in that same run, and removing the declaration does not block the update. A surviving port mode change still counts as a fork even when the text matches upstream.
+`--dry-run` reports without writing. At the pinned SHA it prints the ownership map: each fork with its changed lines, and the port-only files. CI runs it for every component, so a hand edit to a derived file or an undeclared fork fails the pull request. `--bootstrap` regenerates a component from upstream at a SHA without a merge, keeping each declared fork, which is how 2.0 rebuilt the tree and how a damaged tree recovers. `--clone` reads upstream from a local clone.
+
+After a sync, write the `CHANGES.md` entry from the printed report, then run the generator and the tests.
 
 ## Before you open a PR
 
@@ -38,33 +44,12 @@ Install the root dependencies, then run the generator and the tests:
 ```shell
 bun install --frozen-lockfile
 bun tools/generate.mjs
-bun test tests/
+GIT_CONFIG_GLOBAL=/dev/null bun test tests/ --timeout 30000
 ```
 
-The root `package.json` declares `typebox` and the optional `@earendil-works/pi-coding-agent` as peer dependencies, because Pi provides both to an extension at runtime. The root `bun.lock` pins `typebox` for the generator, which checks hook files against it, and for the tests under `tests/pi/`, which load the extension outside Pi.
+The generator stamps `VERSION` into the Claude Code and Codex manifests, the marketplace entry, and `package.json`. It renders each model-consuming skill's Models section, interrogate's reviewer table, and setup-pstack's sheet block from `plugins/pstack/models.json`, lists the plugin's agents in the Claude Code manifest, and copies the license and notice files into the installed plugin. It checks each skill's frontmatter, every local Markdown link, the plugin layout, agent frontmatter, the Codex marketplace, and both hooks files against their pins in `tools/frozen-hooks.json`. CI runs `bun tools/generate.mjs --check`, which writes nothing and fails naming each generated file that is stale or orphaned, so commit the generator's output. `.pre-commit-config.yaml` runs the same check before each commit once you run `prek install` (or `pre-commit install`).
 
-The generator writes `VERSION` into all four plugin manifests and the Pi `package.json` and stamps model defaults from `plugins/pstack/models.json`. It also owns the lines under the first heading of some files: the Codex preamble on each skill with a row in the Per-skill notes table of `skills/poteto-mode/references/codex-tools.md`, and the driver-skill line on the playbooks in `DRIVER_PLAYBOOKS`. Either line anywhere else fails the generator, so a skill gets the preamble by gaining a notes row. The GitHub Copilot preamble comes the same way from the Per-skill notes table of `copilot-tools.md` and follows any Codex preamble. No skill file carries a Pi line: `poteto-mode/SKILL.md` points at `pi-tools.md` once, and a skill's Pi note is a row in that file. For Copilot it also stamps the role list in `skills/setup-pstack/scripts/sheet.awk`, the roles-by-tier table in `setup-pstack/copilot.md`, and the role-model skill list in `hooks/session-start-copilot.md` from `models.json`. It validates each skill's `name` and `description`, then generates a Codex prompt for each public skill using the [slash-command table](docs/reference.md#slash-commands).
-
-It also copies the four files in `PORTABLE_ASSETS` into the skills-only installation and removes stale generated files. `NOTICE-skills.md` supplies the notice included with those skills.
-
-The generator rejects missing Markdown links, links outside the skills tree, and instructions to open unreachable files. It checks for stray model names, requires a matching `CHANGES.md` heading, and validates the Codex marketplace and Claude hook paths. It also enforces these rules:
-
-- No `commands/` directory.
-- No `disable-model-invocation` on a skill.
-- Every `principle-*` leaf sets `user-invocable: false`.
-- Plugin agents use their namespaced `pstack:<name>` names.
-
-CI runs `bun tools/generate.mjs --check`, which writes nothing and fails naming each generated file that is stale, missing, or orphaned, so commit the generator's output. Run the same command locally to preview CI. It checks your working tree, not the commit, so a gitignored file such as `.DS_Store` in a generated directory fails only locally, and uncommitted regenerated output passes only locally. `.pre-commit-config.yaml` runs the same command before each commit once you run `prek install` (or `pre-commit install`) in your clone.
-
-When adding a skill, include `name` and `description` in its frontmatter. Public skills also need a row in the slash-command table. The row supplies the Codex menu description and ordering. The generator reports any skill missing a row or any row without a skill.
-
-Change model defaults in `models.json`, never in a skill body. A role names a tier from `tiers` (`default`, `strongest`, or `panel`), so moving a tier is one edit, the `codex` block gives the Codex example for each tier, and the `pi` block maps each available family name to a Pi model ID once per Pi provider, with a `fallback` provider for sessions on any other. The generator checks the configuration's structure as it loads it (`parseModels` in `tools/generate.mjs`) and fails naming the offending role, tier, or slug. `tests/models.test.mjs` proves each malformed shape is rejected and checks that skills name every role they use. A full `claude-*` ID or a backticked available name such as `` `fable` `` outside a generated region fails the generator with its file and line.
-
-`bun test tests/` covers the generator, the sync tool, the link validator, and `tests/invariants.test.mjs`, which builds fixture trees that must trip each layout invariant. One check is behavioral and lives in `tests/skill-collision-repro.sh`: it needs the `claude` CLI and API access and makes one haiku call to prove a user-typed `/plugin:name` reaches a skill with no `commands/` present. CI cannot run it, so run it locally at least once before a release.
-
-If you touched `plugins/pstack/pi/` or `pi-tools.md`, run the Pi checks against a signed-in `pi` 1.1 as well. `bun tools/typecheck-pi.mjs` typechecks the extension under strict against the installed Pi package's own types; it uses `PI_PACKAGE_DIR` when set and otherwise looks under the global npm root, then Homebrew's `pi-coding-agent` formula (`$(brew --prefix)/opt/pi-coding-agent/libexec/lib/node_modules`), then bun's global directory (`BUN_INSTALL_GLOBAL_DIR`, then `$BUN_INSTALL/install/global`, then `$XDG_CACHE_HOME/.bun/install/global`, then `~/.bun/install/global` and `~/.cache/.bun/install/global`), as `tests/pi/catalog.test.mjs` and `tests/pi/runtime.test.mjs` do through `tools/pi-package.mjs`. CI's `Pi extension types` job installs the pinned release in the global npm root. `PSTACK_PI_LIVE=1 bun test tests/pi/live.test.mjs` drives the extension through real `pi` processes in about five minutes. It makes real model calls, on the shipped `openai` models by default. Set `PSTACK_PI_LIVE_PROVIDER=anthropic` to call the Claude models instead, or set `PSTACK_PI_LIVE_MODELS` to a `pi models:` line to replace individual models.
-
-If you touched `plugins/pstack/hooks/`, `copilot-tools.md`, or `setup-pstack`, run `tests/copilot-smoke.sh` against a signed-in `copilot` CLI. It installs the checkout into a throwaway `HOME` and `COPILOT_HOME`, spends about twenty premium requests, and skips when `copilot` is missing. Set `SMOKE_GITHUB=<owner>/<repo>@<ref>` to repeat the plugin-file checks on a GitHub marketplace install of a pushed ref.
+Change model defaults in `models.json`, never in a skill body. A role names a tier (`default`, `strongest`, or `panel`), and each tier holds T3 entries in the grammar `t3-sheet.mjs` checks. The panel must span two model families. A role may carry an `alias`, the label a sheet written before upstream renamed the role still uses.
 
 If you touched `skills/poteto-mode/scripts/`:
 
@@ -72,16 +57,16 @@ If you touched `skills/poteto-mode/scripts/`:
 cd plugins/pstack/skills/poteto-mode/scripts
 bun install --frozen-lockfile
 bun run typecheck
-bun test orch watch-pr check-plan.test.ts
-bunx prettier@3.6.2 --check .
+GIT_CONFIG_GLOBAL=/dev/null bun test orch watch-pr check-plan.test.ts
+bunx prettier@3.6.2 --check watch-pr/settle.ts watch-pr/settle.test.ts resolve-codex-transcript.ts
 ```
 
-The scripts use Prettier 3.6.2 at upstream's settings in `.prettierrc.json`, CI runs the same check, and `.prettierignore` names each file the check skips and why.
+Upstream's scripts are not Prettier output, so the format check covers the port's own TypeScript only.
 
-`ship-pr` has one check CI cannot run. `watch-pr/live-merge-safety.mjs` creates a private repository on your `gh` account, drives `ship-pr inspect` and `cancel-pending` against a stale head, a moved base, and a retargeted base, confirms GitHub refuses a merge at a stale SHA, merges the current head, and deletes the repository. The delete needs the `gh` token's `delete_repo` scope; when it fails, the script prints the command to delete the repository by hand. Run it from the same directory before a release that changes `watch-pr/`:
+If you touched the installer (`tools/install.mjs` or `tools/install/`), also run its end-to-end test. It needs the `claude` and `codex` CLIs, runs in a throwaway `HOME`, and takes a few minutes:
 
 ```shell
-bun watch-pr/live-merge-safety.mjs --live-disposable
+T3_PSTACK_E2E=1 GIT_CONFIG_GLOBAL=/dev/null bun test tests/install-e2e.test.mjs --timeout 300000
 ```
 
 If you touched a workflow, audit it before pushing:
@@ -90,38 +75,32 @@ If you touched a workflow, audit it before pushing:
 uvx zizmor@1.29.0 --persona pedantic --min-severity low --collect all -- .
 ```
 
-`--collect all` matches what CI scans. Pointing zizmor at `.github/workflows/` alone skips `dependabot.yml`, so the local run comes back clean on findings CI will fail on.
-
 ## Things that will fail CI
 
-- **A `plugins/pstack/commands/` directory.** Claude Code renders commands and user-invocable skills in the same slash menu, so a trampoline paired with its skill duplicates every `/pstack:<name>` row ([#22](https://github.com/michael-denyer/pstack-claude/issues/22)). Codex stubs live in `plugins/pstack/.codex-plugin/prompts/`. An upstream sync will try to reintroduce `commands/`; move any new stubs across.
-- **`disable-model-invocation` in a skill's frontmatter.** On a skill it makes the Skill tool refuse the invocation outright, which breaks the SessionStart mandate. The `principle-*` leaves use `user-invocable: false` instead.
-- **Stale generated output.** The `Generated files current` job runs `bun tools/generate.mjs --check`, which fails naming each generated file to write or orphan to remove. Editing `VERSION` without regenerating, hand-editing a manifest's `version` field, or bumping without a matching `CHANGES.md` heading all land here. The same run validates `hooks/hooks.json`, the Codex hooks file `.codex-plugin/plugin.json` names, and the Copilot hooks file `.github/plugin/plugin.json` names: every `${CLAUDE_PLUGIN_ROOT}` path a command names, or `${COPILOT_PLUGIN_ROOT}` path in the Copilot file, must exist in the plugin.
-- **An unresolved sync conflict.** `bun tools/generate.mjs` fails on any line under `plugins/pstack` that starts with seven `<`, `|`, `=`, or `>` followed by a space or the line end, and names the file and line. A sync writes the `<`, `=`, and `>` markers for every text conflict. A `|` line comes from a merge run by hand under a `diff3` conflict style.
-- **A missing or escaping local Markdown link.** `tools/validate-skills.mjs` resolves bare, `./`, `../`, and reference-style targets against their Markdown file. Every local target must exist inside `plugins/pstack/skills`.
-- **Prose naming a plugin file the install does not carry.** The same tool resolves every backticked relative path against its Markdown file and against the plugin root. A token that lands on a real file or directory outside `plugins/pstack/skills` (`agents/comment-sicko.md`, `../../hooks/hooks.json`) fails. Tokens that resolve to nothing (placeholders, slash commands, `plugins/pstack/models.json` maintainer notes) pass. A Markdown link is caught by the link check; this covers the backticked form that is not a link.
-- **A shell script that fails shellcheck.** Every `.sh` file outside `node_modules` is linted at warning severity.
-- **An action pinned to a tag.** Use the full 40-character commit SHA with a version comment. A mutable tag can be force-pushed into our runners.
-- **A workflow file that fails `actionlint`.** Invalid YAML, a malformed expression, an unknown runner label, or a `needs:` pointing at a job that does not exist. Run `actionlint` from the repository root.
-- **A Markdown correctness error.** Reversed link syntax, an empty link target, a missing image alt, a fragment link to a heading that is not there, or an undefined or unused reference definition. The rule set is deliberately correctness-only and lives in `.markdownlint-cli2.jsonc`. Run `npx --yes markdownlint-cli2@0.18.1 '**/*.md'`.
-- **A broken relative link in any Markdown file.** The link job resolves file and fragment targets offline and never touches a remote URL, so external link rot cannot fail your PR. Run `lychee --offline --include-fragments --exclude-path node_modules --exclude-path .git '**/*.md'`.
+- **A hand edit to a derived file.** The fork check runs `tools/sync.mjs --dry-run` at each pin. Change the rule that produced the text instead, or declare a fork.
+- **A substitution that no longer matches upstream.** Update it to upstream's current sentence or delete it.
+- **`disable-model-invocation` on `poteto-mode`.** The session-start hook invokes it by name, and the flag makes the Skill tool refuse that.
+- **A root `plugins/pstack/plugin.json`.** Codex reads a plugin with upstream's Agent Plugins manifest as an Agent Plugin and truncates each injected SKILL.md to 8,000 bytes, which cuts `poteto-mode` off mid-file. `tools/upstream.json` excludes the file.
+- **A changed hooks file.** Codex trusts a plugin hook by a hash of its entry, and a Git marketplace delivers a new entry at the next app-server start, so any change to `hooks/hooks.json` or `hooks/codex-hooks.json` stops routing in every Codex home until the installer reruns. `tools/frozen-hooks.json` pins both. Change `session-start.sh` or the routing text instead. When an entry must change, pin its new digest with `changedIn` set to the release, and tell users to rerun the installer in that release's `CHANGES.md` entry. The check fetches `origin/main`, which the marketplaces deliver, and compares each hooks file with it, so a file that differs from main's needs a `VERSION` newer than main's and a `changedIn` that names it, and the installer trusts only the entry its own release pins. The fetch means the check needs the network.
+- **Stale generated output, or a missing `CHANGES.md` heading for `VERSION`.**
+- **An unresolved sync conflict marker** anywhere under `plugins/pstack`.
+- **A missing or escaping local Markdown link.**
+- **A shell script that fails shellcheck**, **an action pinned to a tag**, **a workflow that fails `actionlint`**, **a Markdown correctness error**, or **a broken relative link** in any Markdown file.
 
 ## Dependency updates
 
-Dependabot keeps the pinned action SHAs current. The vendored scripts' one runtime dependency (`commander`) follows upstream's pin and moves with `tools/sync.mjs`; `osv-scanner` scans every `bun.lock` weekly, so a CVE still surfaces. The root `bun.lock` pins `typebox`, which the generator and the Pi extension tests import. If you bump it by hand, run `bun install` and commit the resulting `bun.lock` in the same change.
+Dependabot keeps the pinned action SHAs current. The vendored scripts' one runtime dependency (`commander`) follows upstream's pin and moves with `tools/sync.mjs`. `osv-scanner` scans every `bun.lock` weekly. The root `bun.lock` pins `typebox`, which the generator uses to check the hooks files.
 
 ## Releasing
 
-Plugin auto-update installs **by version number**, not by tracking `main`. A skill fix merged without a version bump is inert on every installed copy, because the updater sees the same version it already has and does nothing.
-
-So: any PR that changes skill behavior either bumps the version itself or is followed by a release PR that does. The bump is three steps: edit the root `VERSION` file, add a `CHANGES.md` entry under a `## <version>` heading describing what changed and why, and run `bun tools/generate.mjs` to stamp the manifests. Forgetting any of the three fails CI. Run the full invariant script (including the behavioral leg) before merging.
+Plugin auto-update installs **by version number**, not by tracking `main`. A skill fix merged without a version bump is inert on every installed copy. The bump is three steps: edit the root `VERSION` file, add a `CHANGES.md` entry under a `## <version> - <title>` heading, and run `bun tools/generate.mjs` to stamp the manifests. Forgetting any of the three fails CI.
 
 ## Commit and PR style
 
 - Explain what changed and why. The diff already shows how.
-- One concern per PR. A behavior fix and a refactor in the same diff are two separate reviews, and reviewing them together means doing neither properly.
-- Claim only what you verified, and name the check. "52/52 bun tests pass" beats "tests pass"; "did not run the behavioral leg" beats silence.
+- One concern per PR.
+- Claim only what you verified, and name the check.
 
 ## Reporting bugs
 
-Include the pstack version, the Claude Code (or Codex, Pi, or GitHub Copilot) version, and the reproduction steps. [#22](https://github.com/michael-denyer/pstack-claude/issues/22) is the model to copy: it named versions, gave numbered steps, and included the experiment that isolated the cause.
+Include the t3-pstack version, the T3 Code version, the host (Claude Code or Codex) and its version, and the reproduction steps.

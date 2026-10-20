@@ -1,10 +1,19 @@
 $ErrorActionPreference = 'Stop'
 
-$sheetRoot = $env:CODEX_HOME
-if (-not $sheetRoot) {
-    $sheetRoot = Join-Path $env:USERPROFILE '.codex'
+# One sheet per machine. Until the installer moves an older home's sheet
+# there, that home's sheet still counts.
+$configRoot = $env:XDG_CONFIG_HOME
+if (-not $configRoot) {
+    $configRoot = Join-Path $env:USERPROFILE '.config'
 }
-$sheet = Join-Path $sheetRoot 't3-pstack-models.md'
+$sheet = Join-Path $configRoot 't3-pstack\models.md'
+if (-not (Test-Path -LiteralPath $sheet -PathType Leaf)) {
+    $sheetRoot = $env:CODEX_HOME
+    if (-not $sheetRoot) {
+        $sheetRoot = Join-Path $env:USERPROFILE '.codex'
+    }
+    $sheet = Join-Path $sheetRoot 't3-pstack-models.md'
+}
 $off = $false
 if (Test-Path -LiteralPath $sheet -PathType Leaf) {
     # An unreadable sheet leaves the hook on, as session-start.sh does.
