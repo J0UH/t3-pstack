@@ -2,51 +2,36 @@
 // the tree, so this pins every occurrence to its source instead of trusting a
 // hand edit to keep up.
 import { describe, expect, test } from "bun:test";
-import { readFileSync, readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { agentSkills, publicSkills } from "../tools/generate.mjs";
+import { agentSkills } from "../tools/generate.mjs";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
-const documentation = ["README.md", "docs/reference.md"]
-  .map((file) => readFileSync(join(repoRoot, file), "utf8"))
-  .join("\n");
-const skillsDir = join(repoRoot, "plugins/pstack/skills");
-const total = agentSkills(skillsDir).length;
-const publicCount = publicSkills(skillsDir).length;
-const principles = total - publicCount;
-const stubs = readdirSync(join(repoRoot, "plugins/pstack/.codex-plugin/prompts")).filter((f) => f.endsWith(".md")).length;
+const readme = readFileSync(join(repoRoot, "README.md"), "utf8");
+const skills = agentSkills(join(repoRoot, "plugins/pstack/skills"));
+const principles = skills.filter(({ name }) => name.startsWith("principle-")).length;
+const agents = readdirSync(join(repoRoot, "plugins/pstack/agents")).filter((f) => f.endsWith(".md")).length;
 const pins = JSON.parse(readFileSync(join(repoRoot, "tools/upstream.json"), "utf8")).components;
 
-const numbersBefore = (phrase) => [...documentation.matchAll(new RegExp(`(\\d+) (?:${phrase})`, "g"))].map((m) => Number(m[1]));
+const numbersBefore = (phrase) => [...readme.matchAll(new RegExp(`(\\d+) (?:${phrase})`, "g"))].map((m) => Number(m[1]));
 
-describe("README and reference facts match the tree", () => {
-  test("skill directory count", () => {
-    const found = numbersBefore("skill directories|Agent Skills");
-    expect(found.length).toBeGreaterThan(0);
-    for (const n of found) expect(n).toBe(total);
+describe("README facts match the tree", () => {
+  test("skill directory, principle leaf, and agent counts", () => {
+    expect(numbersBefore("skill directories")).toEqual([skills.length]);
+    expect(numbersBefore("of them `principle-\\*` leaves")).toEqual([principles]);
+    expect(numbersBefore("agents")).toEqual([agents]);
   });
 
-  test("public skill and stub counts", () => {
-    const found = [
-      ...numbersBefore("are public workflows|public workflows|public skills|slash command stubs"),
-      ...[...documentation.matchAll(/The (\d+) `\.codex-plugin\/prompts/g)].map((m) => Number(m[1])),
-    ];
-    expect(found.length).toBeGreaterThan(0);
-    for (const n of found) expect(n).toBe(publicCount);
-    expect(stubs).toBe(publicCount);
+  test("the pinned installer command names this release's tag", () => {
+    const version = readFileSync(join(repoRoot, "VERSION"), "utf8").trim();
+    expect([...readme.matchAll(/npx -y github:chhoumann\/t3-pstack#v([^\s`]+)/g)].map((m) => m[1])).toEqual([version]);
   });
 
-  test("principle leaf count", () => {
-    const found = numbersBefore("`principle-\\*`");
-    expect(found.length).toBeGreaterThan(0);
-    for (const n of found) expect(n).toBe(principles);
-  });
-
-  test("each documented upstream pin matches the pinned SHA", () => {
-    const named = [...documentation.matchAll(/synced against upstream `([0-9a-f]+)`/g)].map((m) => m[1]);
-    expect(named.length).toBeGreaterThan(0);
-    for (const sha of named) expect(pins.pstack.sha.startsWith(sha)).toBe(true);
+  test("the documented upstream pin matches every component's pin", () => {
+    const named = [...readme.matchAll(/synced against upstream `([0-9a-f]+)`/g)].map((m) => m[1]);
+    expect(named).toHaveLength(1);
+    for (const { sha } of Object.values(pins)) expect(sha.startsWith(named[0])).toBe(true);
   });
 });

@@ -1,8 +1,8 @@
 {
   "name": "t3-pstack",
   "displayName": "t3-pstack (pstack for T3 Code)",
-  "version": "1.0.12",
-  "description": "pstack for T3 Code. Rigorous agent workflows whose subagents, panels, schedules, and PR watches dispatch through T3's orchestration, so panels mix Claude, GPT, and Grok. Original pstack by Lauren Tan (poteto); Claude Code port by Michael Denyer.",
+  "version": "2.0.0-rc.15",
+  "description": "pstack for T3 Code: Lauren Tan's pstack with its Cursor mechanics rewritten in place for T3, so subagents, panels, schedules, and PR watches dispatch through T3's orchestration and panels mix Claude, GPT, and Grok.",
   "author": {
     "name": "Christian Bager Bach Houmann",
     "url": "https://github.com/chhoumann"
@@ -20,29 +20,16 @@
     "subagents",
     "unslop",
     "claude-code",
+    "codex",
     "skills",
     "tdd",
     "code-review",
-    "parallel-agents",
-    "codex",
-    "opencode",
-    "gemini-cli",
-    "prime-agent"
+    "parallel-agents"
   ],
   "agents": [
     "./agents/comment-sicko.md",
     "./agents/poteto-agent.md",
     "./agents/thermo-nuclear-code-quality-review-subagent.md",
-    "./agents/thermo-nuclear-review-subagent.md",
-    "./effort-agents/effort-high.md",
-    "./effort-agents/effort-low.md",
-    "./effort-agents/effort-max.md",
-    "./effort-agents/effort-medium.md",
-    "./effort-agents/effort-xhigh.md",
-    "./effort-agents/poteto-agent-high.md",
-    "./effort-agents/poteto-agent-low.md",
-    "./effort-agents/poteto-agent-max.md",
-    "./effort-agents/poteto-agent-medium.md",
-    "./effort-agents/poteto-agent-xhigh.md"
+    "./agents/thermo-nuclear-review-subagent.md"
   ]
 }

@@ -16,8 +16,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { deriveSkill, loadLeadLines, loadModels } from "../tools/generate.mjs";
-import { RUNTIMES } from "../tools/runtimes.mjs";
+import { deriveT3 } from "../tools/derive-t3.mjs";
+import { loadModels } from "../tools/generate.mjs";
 import {
   applySubstitutions,
   changedLines,
@@ -79,66 +79,22 @@ function underUmask(mask, body) {
 
 describe("applySubstitutions", () => {
   test("rewrites Cursor primitives and counts per rule", () => {
-    const { text, counts } = applySubstitutions(
-      "Use the `Task` tool, then AskQuestion. Skills live in .cursor/skills/.",
-      RULES.substitutions,
-    );
-    expect(text).toBe("Use the `Agent` tool, then AskUserQuestion. Skills live in .claude/skills/.");
-    expect(counts.get("AskQuestion")).toBe(1);
-  });
-
-  test("leaves AskUserQuestion alone", () => {
-    const { text } = applySubstitutions("Prefer AskUserQuestion here.", RULES.substitutions);
-    expect(text).toBe("Prefer AskUserQuestion here.");
-  });
-
-  test("the override sheet path survives the generic .cursor/rules/ rule", () => {
-    const { text } = applySubstitutions(
-      "Use `arena runners` from `~/.cursor/rules/pstack-models.mdc` when present. Rules in .cursor/rules/ apply.",
-      RULES.substitutions,
-    );
-    expect(text).toBe(
-      "Use `arena runners` from `pstack-models.md` when present. Rules in CLAUDE.md imports apply.",
-    );
-  });
-
-  test("the driver-skill and model-default phrases rewrite as the port writes them", () => {
-    const { text } = applySubstitutions(
-      [
-        "Capture a trace via the matching control skill.",
-        "Reproduce via the control skill.",
-        "Drive via the relevant control skill and through its control skill.",
-        "<control skill path> and the control skill's commands",
-        "Multiple `Task` calls in the Task tool.",
-        "on \"restart Cursor\"",
-      ].join("\n"),
-      RULES.substitutions,
-    );
-    expect(text).toBe(
-      [
-        "Capture a trace via the matching driver skill.",
-        "Reproduce via the driver skill.",
-        "Drive via the relevant driver skill and through its driver skill.",
-        "<driver skill path> and the driver skill's commands",
-        "Multiple `Agent` calls in the `Agent` tool.",
-        "on \"restart Claude Code\"",
-      ].join("\n"),
-    );
+    const { text, counts } = applySubstitutions("Spawn it with the Task tool and `run_in_background: true`.", RULES.substitutions);
+    expect(text).toBe('Spawn it with `delegate_task` and `mode: "async"`.');
+    expect(counts.get("the Task tool")).toBe(1);
   });
 
   test("a model default points at the Models section that owns the file, whatever the slug", () => {
     const line = (slug) => `your configured hillclimb model (default \`${slug}\`)`;
-    for (const slug of ["grok-4.7-xhigh-fast", "claude-fable-5-1-thinking-max", "gpt-6-sol-max"]) {
+    for (const slug of ["grok-4.7-xhigh-fast", "claude-opus-5-5-max", "composer-2-fast"]) {
       expect(applySubstitutions(line(slug), RULES.substitutions, "skills/poteto-mode/playbooks/hillclimb.md").text).toBe(
-        "your configured hillclimb model (default in poteto-mode's Models section)",
+        "your configured hillclimb model (default in poteto-mode's [Models](../SKILL.md#models))",
       );
       expect(applySubstitutions(line(slug), RULES.substitutions, "skills/reflect/SKILL.md").text).toBe(
         "your configured hillclimb model (default in [Models](#models))",
       );
     }
-    expect(applySubstitutions("(default `true`)", RULES.substitutions, "skills/reflect/SKILL.md").text).toBe(
-      "(default `true`)",
-    );
+    expect(applySubstitutions("(default `true`)", RULES.substitutions, "skills/reflect/SKILL.md").text).toBe("(default `true`)");
   });
 
   test("every rule's replacement is free of the denylist", () => {
@@ -147,115 +103,76 @@ describe("applySubstitutions", () => {
     }
   });
 
+  // An anchored insert keeps its anchor sentence, so only it may match its
+  // own output. Derivation always starts from upstream's text, so it runs once.
   test("no rule rewrites another rule's output", () => {
-    for (const rel of ["skills/x/SKILL.md", "skills/poteto-mode/playbooks/x.md"]) {
+    for (const rel of ["skills/x/SKILL.md", "skills/poteto-mode/playbooks/x.md", "skills/poteto-mode/SKILL.md"]) {
       for (const rule of RULES.substitutions) {
-        expect(applySubstitutions(rule.replacement, RULES.substitutions, rel).text).toBe(rule.replacement);
+        const { counts } = applySubstitutions(rule.replacement, RULES.substitutions, rel);
+        expect([...counts.keys()].filter((key) => key !== rule.key)).toEqual([]);
       }
     }
   });
 
-  // One upstream sentence per rule that reaches more than one upstream file,
-  // and the one form the port writes for it.
+  // Upstream's own sentences at the pin, and the one form the port writes for each.
   test.each([
     [
       "skills/how/SKILL.md",
-      "Each spawn below names a role line in the `pstack-models.mdc` rule and a default. Set `model` to that line's value, or to the default if the rule or the line is missing.",
-      "Each spawn below names a role line in `pstack-models.md` and a default in [Models](#models). Set `model` to that line's value, or to the default if the sheet or the line is missing.",
+      "Every spawn is a Task subagent with `subagent_type: generalPurpose` and `readonly: true`.",
+      'Every spawn is a `delegate_task` child with `role: "research"` and a brief that says to inspect only and change no file.',
     ],
     [
-      "skills/how/SKILL.md",
-      "If the Task tool rejects a slug, use the default and say so.",
-      "If the `Agent` tool rejects a slug, use the default and say so.",
-    ],
-    [
-      "skills/how/SKILL.md",
-      "Once all explorers have returned, spawn one Task subagent to synthesize their findings into one explanation:",
-      "Once all explorers have returned, spawn one `Agent` subagent to synthesize their findings into one explanation:",
-    ],
-    [
-      "skills/how/SKILL.md",
-      "- `model`: the `how explorer` line, default `grok-4.7-xhigh-fast`",
-      "- `model`: the `how explorer` line, default in [Models](#models)",
-    ],
-    [
-      "skills/architect/SKILL.md",
-      "Take the runners from the `architect runners` line in the `pstack-models.mdc` rule, in place of the `arena runners` line. If the rule or that line is missing, use",
-      "Take the runners from the `architect runners` line in `pstack-models.md`, in place of the `arena runners` line. If the sheet or that line is missing, use",
+      "skills/why/SKILL.md",
+      "Each spawn below names a role line in the `pstack-models.mdc` rule and a default. Set `model` to that line's value, or to the default if the rule or the line is missing. Leave `model` unset when the value is `auto` or `inherit-parent`. If the Task tool rejects a slug, use the default and say so. If it rejects the default, use the closest valid slug of the same family from its error message.",
+      "Each spawn below names a role line in the model sheet and a default. Set `target` from that line's entry, or from the default if the sheet or the line is missing. Leave `target` unset when the value is `auto` or `inherit-parent`. If `delegate_task` rejects an entry, use the default and say so. If it rejects the default, use another target of the same family from `orchestrator_capabilities`.",
     ],
     [
       "skills/arena/SKILL.md",
-      "Families go by prefix: `claude-*`, `gpt-*`, and `grok-*`.",
-      "Families go by model name, such as Opus, Fable, or Sonnet.",
+      "Families go by prefix: `claude-*`, and `grok-*` with `cursor-grok-*` and `composer-*`. A refused `composer-*` entry runs on `grok-4.7-xhigh-fast`.",
+      "A model's family is the first segment of its ID's last `/` part, such as `claude`, `gpt`, or `grok`, whatever provider instance serves it.",
     ],
     [
-      "skills/setup-pstack/SKILL.md",
-      "One runner is claude-opus-5-5-xhigh and one is gpt-5.5-high-fast. The last is grok-4.7-medium-fast.",
-      "One runner is <slug> and one is <slug>. The last is <slug>.",
+      "skills/interrogate/SKILL.md",
+      "Families go by prefix: `claude-*`, and `grok-*` with `cursor-grok-*` and `composer-*`. A refused `composer-*` entry runs on Reviewer B's default.",
+      "A model's family is the first segment of its ID's last `/` part, such as `claude`, `gpt`, or `grok`, whatever provider instance serves it.",
     ],
     [
-      "skills/reflect/SKILL.md",
-      "One message, three `Task` calls, `subagent_type: generalPurpose`, with `model` set as below.",
-      'One message, three `Agent` calls, `subagent_type: "general-purpose"`, with `model` set as below.',
-    ],
-    [
-      "skills/reflect/references/judgment-reviewer.md",
-      "plugin-installed paths under `~/.cursor/plugins/`)\n- `Task` prompts that name a skill path",
-      "plugin-installed paths under `~/.claude/plugins/`)\n- `Agent` prompts that name a skill path",
-    ],
-    [
-      "skills/show-me-your-work/SKILL.md",
-      "Read this run's transcript under the active workspace's `agent-transcripts/` directory (the system prompt names the path). Don't glob across `~/.cursor/projects/*/`.",
-      "Read this run's transcript under Claude Code's per-project transcripts directory at `~/.claude/projects/<encoded-cwd>/`. Don't glob across `~/.claude/projects/`.",
-    ],
-    [
-      "skills/poteto-mode/playbooks/eval.md",
-      "Read each candidate's local transcript under the active workspace's `agent-transcripts/` directory (the system prompt names this path).",
-      "Read each candidate's local transcript under Claude Code's per-project transcripts directory at `~/.claude/projects/<encoded-cwd>/`.",
-    ],
-    [
-      "skills/poteto-mode/playbooks/multi-phase-plan.md",
-      'Explore in subagents with `subagent_type: "poteto-agent"` and an explicit model.',
-      'Explore in subagents with `subagent_type: "pstack:poteto-agent"` and an explicit model.',
-    ],
-    [
-      "skills/automate-me/SKILL.md",
-      "an inline mining pass, Cursor's built-in `create-skill` (authoring), and the **unslop** skill. Use Cursor's built-in `create-skill` skill to author the skill. Follow `create-skill`'s YAML rules.",
-      "an inline mining pass, the **plugin-dev:skill-development** skill (authoring), and the **unslop** skill. Use the **plugin-dev:skill-development** skill to author the skill. Follow `plugin-dev:skill-development`'s YAML rules.",
-    ],
-    [
-      "skills/poteto-mode/playbooks/authoring-a-skill.md",
-      "1. Use the **create-skill** skill (Cursor's built-in for authoring SKILL.md files).",
-      "1. Use the **plugin-dev:skill-development** skill (Claude Code's authoring guidance for SKILL.md files).",
-    ],
-    [
-      "skills/poteto-mode/playbooks/autonomous-run.md",
-      "Pick the wake mechanism using Cursor's `/loop` command (a built-in, not a pstack skill).",
-      "Pick the wake mechanism using Claude Code's `loop` skill (a built-in, not a pstack skill).",
+      "skills/poteto-mode/SKILL.md",
+      "Otherwise use standard speed, the same slug without `-fast`. Verification is the exception and stays on the `swarm workers` model and speed (`grok-4.7-xhigh-fast` by default).",
+      "Otherwise use standard speed, the entry without that option. Verification is the exception and stays on the `swarm workers` model and speed (default in the **swarm** skill's Models section).",
     ],
     [
       "skills/poteto-mode/SKILL.md",
       "on an explicit pause, going offline, a Cursor restart, or imminent context compaction.",
-      "on an explicit pause, going offline, a session restart, or imminent context compaction.",
-    ],
-    [
-      "skills/poteto-mode/playbooks/babysit.md",
-      'This playbook replaces Cursor\'s built-in babysit skill for these requests, for "address the bugbot comments".',
-      'This playbook replaces the bundled **babysit** skill for these requests, for "address the review-bot comments".',
-    ],
-    [
-      "skills/poteto-mode/playbooks/autopilot-full.md",
-      "One Cursor cloud agent per PR owns build, skeptical Bugbot triage, and the fixes.",
-      "One background subagent per PR, in its own worktree, owns build, skeptical review-bot triage, and the fixes.",
+      "on an explicit pause, going offline, an app restart, or imminent context compaction.",
     ],
     [
       "skills/poteto-mode/playbooks/autopilot-stack.md",
-      "On the operator's explicit go, arm a `/goal` with the full program objective. The goal continues across turns until the chain is done.",
-      "On the operator's explicit go, write the full program objective into the standing orders and restate it in your todolist. That objective stands across turns until the chain is done.",
+      "Each tick re-reads both playbooks from trunk, and this one wins where they differ.",
+      "Each tick re-reads both playbooks from disk, and this one wins where they differ.",
+    ],
+    [
+      "skills/ketchup/SKILL.md",
+      "a Mermaid diagram for states, flows, and structures, and a `/visualize` chart for numbers.",
+      "a Mermaid diagram for states, flows, and structures, and an `html_render` chart for numbers.",
     ],
   ])("%s: an upstream sentence takes the port's one form", (rel, upstream, port) => {
     const { text } = applySubstitutions(upstream, RULES.substitutions, rel);
     expect(text).toBe(port);
+    expect(denylistHits(rel, text, RULES.denylist)).toEqual([]);
+  });
+
+  // The T3 behavior the port adds on an upstream anchor: each must survive.
+  test.each([
+    ["skills/poteto-mode/SKILL.md", "Interrupt-chained resumes silently drop directives, so fire a fresh subagent with consolidated scope rather than trusting a \"done\" summary.", ["**Dispatch on T3.**", "dispatch ledger", "`BLOCKED: independent review`", "`clientRequestId`"]],
+    ["skills/poteto-mode/SKILL.md", "- Contested design → the **interrogate** skill (multi-model adversarial) before shipping.", ["before Opening a PR", "After three fix rounds, stop"]],
+    ["skills/arena/SKILL.md", "Prefer a different model family from the parent's.", ["no model scores its own work"]],
+    ["skills/poteto-mode/playbooks/babysit.md", "Run `drive` and `background` under `/loop` in dynamic mode.", ["--timeout 540", "watch_pull_request", "--settle"]],
+    ["skills/poteto-mode/playbooks/autopilot-full.md", "Each owner is a Cursor cloud agent that builds, opens its PR", ["t3_thread_launch", "t3_thread_send"]],
+    ["skills/no-comments/SKILL.md", '1. Spawn `Task` with `subagent_type: "comment-sicko"`. Pass the scope.', ["<plugin root>/agents/comment-sicko.md", "no worktree"]],
+  ])("%s keeps its T3 insert", (rel, upstream, needles) => {
+    const { text } = applySubstitutions(upstream, RULES.substitutions, rel);
+    for (const needle of needles) expect(text).toContain(needle);
     expect(denylistHits(rel, text, RULES.denylist)).toEqual([]);
   });
 });
@@ -338,25 +255,22 @@ describe("denylistHits", () => {
     expect(denylistHits("synthesizer.md", "we renamed `gpt-4` to `gpt-4o` in `encodingForModel`", RULES.denylist)).toEqual([]);
   });
 
-  test("UI repair advice points to the canonical driver policy", () => {
+  test("a team-kit driver points at the T3 surfaces", () => {
     const hits = denylistHits("playbook.md", "Drive with control-ui.", RULES.denylist);
     expect(hits).toHaveLength(1);
-    expect(hits[0]).toContain("poteto-mode/SKILL.md");
-    expect(hits[0]).not.toContain("`verify` built-in");
+    expect(hits[0]).toContain("preview_*");
   });
 
-  test("rejects the old UI instruction but permits project and legacy skill references", () => {
-    expect(denylistHits("playbook.md", "Use the `verify` skill (UIs).", RULES.denylist)).toHaveLength(1);
-    const supported = "The bundled `/verify` is user-invocable only. " +
-      "Use the project `verify` skill or maintain `.claude/skills/verify-*/`.";
-    expect(denylistHits("policy.md", supported, RULES.denylist)).toEqual([]);
+  test("T3 text that names a harness's own paths and tools passes", () => {
+    const t3 = "Look in `.claude/skills/` on Claude Code and `.agents/skills/` elsewhere, then call `delegate_task` with `mode: \"async\"`.";
+    expect(denylistHits("policy.md", t3, RULES.denylist)).toEqual([]);
   });
 
   test("the subagent tool named bare fails the scan, and other Task words pass", () => {
     for (const sentence of [
       "Spawn one Task subagent that explores and explains in one pass:",
       "If a Task tool rejects a slug, use the default.",
-      "a nested spawn has the full Task schema including `environment`",
+      "a nested spawn has the full Task schema",
       "the role runs on the parent chat model (omit Task `model`).",
     ]) {
       expect(denylistHits("skills/x/SKILL.md", sentence, RULES.denylist)).toHaveLength(1);
@@ -370,7 +284,7 @@ describe("denylistHits", () => {
     const hits = denylistHits("skills/x/SKILL.md", "line one\nrun control-cli now\n", RULES.denylist);
     expect(hits).toHaveLength(1);
     expect(hits[0]).toContain("skills/x/SKILL.md:2");
-    expect(hits[0]).toContain("control-cli");
+    expect(hits[0]).toContain("cursor-team-kit driver");
   });
 
   test.each([
@@ -379,10 +293,9 @@ describe("denylistHits", () => {
     ["agent-transcripts", "The system prompt names the active workspace's `agent-transcripts/` directory."],
     ['environment: "cloud"', 'Always `environment: "cloud"` unless the task needs this machine'],
     ["is_background", "is_background: true"],
-  ])("an upstream sentence carrying %s fails the scan", (token, sentence) => {
-    const hits = denylistHits("skills/x/SKILL.md", sentence, RULES.denylist);
-    expect(hits).toHaveLength(1);
-    expect(hits[0]).toContain(`"${token}"`);
+    ["/visualize", "a chart from `/visualize`"],
+  ])("an upstream sentence carrying %s fails the scan", (_, sentence) => {
+    expect(denylistHits("skills/x/SKILL.md", sentence, RULES.denylist).length).toBeGreaterThan(0);
   });
 });
 
@@ -449,7 +362,7 @@ describe("changedLines", () => {
 });
 
 describe("classify", () => {
-  const COUNTS = new Map([["AskQuestion", 1]]);
+  const COUNTS = new Map([["the Task tool", 1]]);
   const bytes = (text) => Buffer.from(text);
   const port = (text, mode = 0o644) => ({ bytes: bytes(text), mode });
   const upstream = (text, mode = 0o644) => ({ ...port(text, mode), binary: false, counts: COUNTS });
@@ -532,24 +445,30 @@ describe("classify", () => {
 });
 
 describe("syncComponent", () => {
-  test("installed plugin text is free of the denylist", () => {
-    const plugin = join(import.meta.dir, "../plugins/pstack");
-    const report = sync({ oldDir: plugin, newDir: plugin, localDir: plugin, dryRun: true });
-    expect(report.hits).toEqual([]);
+  // What the model reads: skills, agents, and the routing text. The license
+  // copies and the manifests name Cursor as legal and descriptive text.
+  test("installed plugin text the model reads is free of the denylist", () => {
+    for (const dir of ["skills", "agents", "hooks"]) {
+      const at = join(import.meta.dir, "../plugins/pstack", dir);
+      const exclude = dir === "skills" ? ["poteto-mode/references/licenses"] : [];
+      const report = sync({ oldDir: at, newDir: at, localDir: at, exclude, dryRun: true });
+      expect(report.unchanged).toBeGreaterThan(0);
+      expect(report.hits).toEqual([]);
+    }
   });
 
   test("clean update, new file, and port-edited file each route correctly", () => {
     const oldUp = tree({
-      "skills/a/SKILL.md": "Step 1: AskQuestion about scope.\n",
+      "skills/a/SKILL.md": "Step 1: ask with the Task tool.\n",
       "skills/b/SKILL.md": "Old b body.\n",
     });
     const newUp = tree({
-      "skills/a/SKILL.md": "Step 1: AskQuestion about scope. Step 2: verify.\n",
+      "skills/a/SKILL.md": "Step 1: ask with the Task tool. Step 2: verify.\n",
       "skills/b/SKILL.md": "New b body.\n",
-      "skills/c/SKILL.md": "Brand new skill. AskQuestion early.\n",
+      "skills/c/SKILL.md": "Brand new skill. Spawn with the Task tool early.\n",
     });
     const local = tree({
-      "skills/a/SKILL.md": "Step 1: AskUserQuestion about scope.\n",
+      "skills/a/SKILL.md": "Step 1: ask with `delegate_task`.\n",
       "skills/b/SKILL.md": "Old b body, plus a Platform note the port added.\n",
     });
 
@@ -561,12 +480,12 @@ describe("syncComponent", () => {
       { kind: "added", rel: "skills/c/SKILL.md" },
     ]);
     expect(report.conflicts).toEqual([{ rel: "skills/b/SKILL.md", reason: "conflict", hunks: 1 }]);
-    expect(report.counts.get("AskQuestion")).toBe(2);
+    expect(report.counts.get("the Task tool")).toBe(2);
     expect(report.hits).toEqual([]);
     expect(readFileSync(join(local, "skills/a/SKILL.md"), "utf8")).toBe(
-      "Step 1: AskUserQuestion about scope. Step 2: verify.\n",
+      "Step 1: ask with `delegate_task`. Step 2: verify.\n",
     );
-    expect(readFileSync(join(local, "skills/c/SKILL.md"), "utf8")).toBe("Brand new skill. AskUserQuestion early.\n");
+    expect(readFileSync(join(local, "skills/c/SKILL.md"), "utf8")).toBe("Brand new skill. Spawn with `delegate_task` early.\n");
     expect(readFileSync(join(local, "skills/b/SKILL.md"), "utf8")).toBe(
       "<<<<<<< local\nOld b body, plus a Platform note the port added.\n=======\nNew b body.\n>>>>>>> upstream\n",
     );
@@ -600,9 +519,9 @@ describe("syncComponent", () => {
   });
 
   test("an upstream deletion removes the local copy when the port never edited it", () => {
-    const oldUp = tree({ "a.md": "keep\n", "gone.md": "AskQuestion here\n", "forked.md": "old\n" });
+    const oldUp = tree({ "a.md": "keep\n", "gone.md": "the Task tool here\n", "forked.md": "old\n" });
     const newUp = tree({ "a.md": "keep\n" });
-    const local = tree({ "a.md": "keep\n", "gone.md": "AskUserQuestion here\n", "forked.md": "old, port edit\n" });
+    const local = tree({ "a.md": "keep\n", "gone.md": "`delegate_task` here\n", "forked.md": "old, port edit\n" });
 
     const report = sync({ oldDir: oldUp, newDir: newUp, localDir: local });
 
@@ -921,13 +840,13 @@ describe("syncComponent", () => {
   });
 
   test("a binary file of any extension is copied byte for byte and never substituted", () => {
-    const invalidUtf8 = Buffer.concat([Buffer.from("AskQuestion "), Buffer.from([0xff, 0xfe, 0x80])]);
-    const withNul = Buffer.from("AskQuestion\0");
+    const invalidUtf8 = Buffer.concat([Buffer.from("the Task tool "), Buffer.from([0xff, 0xfe, 0x80])]);
+    const withNul = Buffer.from("the Task tool\0");
     const oldUp = tree({});
     const newUp = tree({});
     writeFileSync(join(newUp, "doc.pdf"), invalidUtf8);
     writeFileSync(join(newUp, "blob.bin"), withNul);
-    writeFileSync(join(newUp, "bun.lock"), "AskQuestion\n");
+    writeFileSync(join(newUp, "bun.lock"), "the Task tool\n");
     const local = tree({});
 
     const report = sync({ oldDir: oldUp, newDir: newUp, localDir: local });
@@ -935,7 +854,7 @@ describe("syncComponent", () => {
     expect(report.counts).toEqual(new Map());
     expect(readFileSync(join(local, "doc.pdf")).equals(invalidUtf8)).toBe(true);
     expect(readFileSync(join(local, "blob.bin")).equals(withNul)).toBe(true);
-    expect(readFileSync(join(local, "bun.lock"), "utf8")).toBe("AskQuestion\n");
+    expect(readFileSync(join(local, "bun.lock"), "utf8")).toBe("the Task tool\n");
   });
 
   test("a binary file of any extension differing three ways blocks every write", () => {
@@ -1463,8 +1382,8 @@ describe("syncComponent", () => {
   test("an old revision's malformed frontmatter is never derived when the port copy does not need it", () => {
     const good = "---\nname: a\ndescription: fine\n---\nbody\n";
     const bad = "---\nname: a\ndescription: [unclosed\n---\nbody\n";
-    const [models, leads] = [loadModels(), loadLeadLines()];
-    const derive = (rel, text) => deriveSkill(join("plugins/pstack/skills", rel), text, models, leads);
+    const models = loadModels();
+    const derive = (rel, text) => deriveT3(join("plugins/pstack/skills", rel), text, models);
     const upstreamDeletedIt = { old: { "a/SKILL.md": good, "b/SKILL.md": bad }, new: { "a/SKILL.md": good } };
     const upstreamFixedIt = { old: { "a/SKILL.md": bad }, new: { "a/SKILL.md": good } };
     for (const { old, new: next } of [upstreamDeletedIt, upstreamFixedIt]) {
@@ -1501,7 +1420,7 @@ describe("sync CLI", () => {
     "plugins/pstack/skills/s.md": { kind, why: "Fixture fork.", since: "0.9.48", upstream: "not-proposed" },
   });
 
-  function cli({ oldText, newText, localText, forks = {} }) {
+  function cli({ oldText, newText, localText, forks = {}, substitutions = [] }) {
     const root = tree({});
     const upstream = join(root, "upstream");
     mkdirSync(join(upstream, "skills"), { recursive: true });
@@ -1517,19 +1436,19 @@ describe("sync CLI", () => {
     const newSha = commit(newText);
 
     const port = join(root, "port");
-    for (const file of ["sync.mjs", "generate.mjs", "plugin.mjs", "runtimes.mjs", "validate-skills.mjs", "substitutions.json"]) {
+    for (const file of ["sync.mjs", "generate.mjs", "plugin.mjs", "derive-t3.mjs", "validate-skills.mjs"]) {
       cpSync(join(import.meta.dir, "../tools", file), join(port, "tools", file));
     }
+    // The repo's rules target upstream's real tree, so the fixture brings its own
+    // rules and keeps the repo's denylist.
+    const { denylist } = JSON.parse(readFileSync(join(import.meta.dir, "../tools/substitutions.json"), "utf8"));
+    writeFileSync(join(port, "tools/substitutions.json"), JSON.stringify({ substitutions, denylist }));
     symlinkSync(join(import.meta.dir, "../node_modules"), join(port, "node_modules"));
     cpSync(join(import.meta.dir, "../plugins/pstack/models.json"), join(port, "plugins/pstack/models.json"));
     mkdirSync(join(port, "plugins/pstack/skills"));
     mkdirSync(join(port, "plugins/pstack/skills/setup-pstack/scripts"), { recursive: true });
     cpSync(join(import.meta.dir, "../plugins/pstack/skills/setup-pstack/scripts/t3-sheet.mjs"), join(port, "plugins/pstack/skills/setup-pstack/scripts/t3-sheet.mjs"));
     writeFileSync(join(port, "plugins/pstack/skills/s.md"), localText);
-    for (const runtime of RUNTIMES) {
-      mkdirSync(join(port, runtime.tools, ".."), { recursive: true });
-      writeFileSync(join(port, runtime.tools), `${runtime.notesHeader}\n|-------|----------|\n`);
-    }
     for (const { skill } of JSON.parse(readFileSync(join(port, "plugins/pstack/models.json"), "utf8")).roles) {
       mkdirSync(join(port, "plugins/pstack/skills", skill), { recursive: true });
       writeFileSync(join(port, "plugins/pstack/skills", skill, "SKILL.md"), "");
@@ -1560,7 +1479,7 @@ describe("sync CLI", () => {
 
     const result = run("--dry-run");
 
-    expect(result.stderr).toContain("FAIL: Cursor-isms");
+    expect(result.stderr).toContain("FAIL: Cursor terms");
     expect(result.status).toBe(1);
     expect(readdirSync(scratch).filter((name) => name.startsWith("pstack-"))).toEqual([]);
   });
@@ -1604,7 +1523,6 @@ describe("sync CLI", () => {
     expect(result.stderr).not.toContain("tools/forks.json");
     const portOnly = [
       ...roleSkills.map((skill) => `${skill}/SKILL.md`),
-      ...RUNTIMES.map((runtime) => runtime.tools.replace("plugins/pstack/skills/", "")),
       "setup-pstack/scripts/t3-sheet.mjs",
     ];
     expect(result.stdout).toContain(`\nport-only: ${portOnly.length} files\n`);
@@ -1656,7 +1574,7 @@ describe("sync CLI", () => {
 
   test("a stray argument fails naming it above the usage line, and nothing is written or pinned", () => {
     const { run, pin, local, oldSha } = cli({ oldText: "one\n", newText: "two\n", localText: "one\n" });
-    const usage = "usage: bun tools/sync.mjs <kit> <new-sha> [--dry-run]\n";
+    const usage = "usage: bun tools/sync.mjs <kit> <new-sha> [--dry-run] [--bootstrap] [--clone <dir>]\n";
 
     for (const [flags, named] of [
       [["--dry"], 'unexpected argument: "--dry"\n'],
@@ -1723,5 +1641,52 @@ describe("sync CLI", () => {
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("FAIL: tools/forks.json declares paths under kit that are not forked at the pinned SHA");
+  });
+
+  test("a rule that matches nothing upstream fails the dry run and the real run naming it, and nothing is written", () => {
+    const rule = { pattern: "two", replacement: "2", rationale: "fixture" };
+    const lost = { pattern: "gone sentence", replacement: "T3 sentence", rationale: "fixture" };
+    const { run, pin, local, oldSha } = cli({ oldText: "one\n", newText: "two\n", localText: "one\n", substitutions: [rule, lost] });
+
+    for (const result of [run("--dry-run"), run()]) {
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(
+        "FAIL: substitutions that match nothing upstream; update each to upstream's new text or delete it, then rerun:\n  \"gone sentence\"\n",
+      );
+      expect(result.stderr).not.toContain('"two"');
+    }
+    expect(pin()).toBe(oldSha);
+    expect(local()).toBe("one\n");
+  });
+
+  test("--bootstrap writes every carried file in its derived form, keeps a declared fork, and pins the SHA", () => {
+    const rule = { pattern: "Task", replacement: "delegate_task", rationale: "fixture" };
+    const { run, pin, local, newSha, port } = cli({ oldText: "one\n", newText: "spawn a Task\n", localText: "port\n", substitutions: [rule] });
+
+    const dryRun = run("--bootstrap", "--dry-run");
+    expect(dryRun.status).toBe(0);
+    expect(local()).toBe("port\n");
+
+    expect(run("--bootstrap").status).toBe(0);
+    expect(local()).toBe("spawn a delegate_task\n");
+    expect(pin()).toBe(newSha);
+
+    writeFileSync(join(port, "plugins/pstack/skills/s.md"), "the port's fork\n");
+    writeFileSync(join(port, "tools/forks.json"), JSON.stringify({ kit: declareS("port-feature") }));
+    const kept = run("--bootstrap");
+    expect(kept.status).toBe(0);
+    expect(kept.stdout).toContain("fork kept: plugins/pstack/skills/s.md");
+    expect(local()).toBe("the port's fork\n");
+  });
+
+  test("--clone reads upstream from a local clone", () => {
+    const { run, newSha, pin, port } = cli({ oldText: "one\n", newText: "two\n", localText: "one\n" });
+    const remote = JSON.parse(readFileSync(join(port, "tools/upstream.json"), "utf8")).remote;
+
+    const result = run("--clone", remote);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(`cloning ${remote} ...`);
+    expect(pin()).toBe(newSha);
   });
 });

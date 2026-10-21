@@ -4,8 +4,8 @@
 // `<providerInstanceId>/<modelId>` plus `<optionId>=<value>` pairs, or
 // `inherit-parent` (alias `auto`). An entry maps one to one onto a
 // `delegate_task` target, so this file is the only place the grammar lives:
-// the generator checks the models.json `t3` block with it, and setup-pstack
-// checks a sheet against the live `orchestrator_capabilities` catalog with it.
+// the generator checks the models.json tiers with it, and setup-pstack checks
+// a sheet against the live `orchestrator_capabilities` catalog with it.
 //
 //   node t3-sheet.mjs <sheet.md> <catalog.json>
 //
@@ -24,7 +24,7 @@ export function parseEntry(text) {
     if (pairs.length) throw new Error(`"${text.trim()}": ${target} takes no options`);
     return null;
   }
-  const match = target.match(/^([A-Za-z0-9_-]+)\/([A-Za-z0-9._-]+)$/);
+  const match = target.match(/^([A-Za-z0-9_-]+)\/([A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*)$/);
   if (!match) throw new Error(`"${text.trim()}" does not start with <providerInstanceId>/<modelId>`);
   const options = Object.create(null);
   for (const pair of pairs) {
@@ -36,9 +36,10 @@ export function parseEntry(text) {
   return { providerInstanceId: match[1], model: match[2], options };
 }
 
-// The family is the model ID's first segment (`claude`, `gpt`, `grok`), so a
-// Claude model served by a Codex-driver pool still counts as Claude.
-export const family = (model) => model.split("-")[0];
+// The family is the first segment (`claude`, `gpt`, `grok`) of the model ID's
+// last `/` part, so a Claude model served by a Codex-driver pool still counts as
+// Claude, and an OpenCode route prefix such as `openrouter/` decides nothing.
+export const family = (model) => model.split("/").pop().split("-")[0];
 
 // A panel's families among its concrete targets. An inherit entry does not
 // count: one sheet serves every thread on the machine, so its family depends on
@@ -63,20 +64,22 @@ export function parseSheet(markdown) {
 }
 
 // Problems with a parsed sheet, for the role vocabulary of models.json (each
-// role with its `tier`), its `t3` tier defaults, and an
-// `orchestrator_capabilities` catalog. A role with no line runs on its tier's
-// default, so that default must dispatch here too.
+// role with its `tier`, and the `alias` a released sheet may still use), its
+// tier defaults, and an `orchestrator_capabilities` catalog. A role with no
+// line runs on its tier's default, so that default must dispatch here too.
+// With no catalog, as in the installer's doctor, only the grammar is checked.
 export function checkSheet(sheet, { roles, defaults, catalog }) {
   const problems = [];
-  const byRole = new Map(roles.map((r) => [r.role, r]));
+  const byRole = new Map(roles.flatMap((r) => [[r.role, r], ...(r.alias ? [[r.alias, r]] : [])]));
   const seen = new Set();
   for (const { line, key, value } of sheet) {
     if (!key) {
       problems.push(`line ${line}: not a "<role>: <value>" line (lowercase role, one space after the colon, no indent or markup)`);
       continue;
     }
-    if (seen.has(key)) problems.push(`"${key}" appears twice; only one line may set it`);
-    seen.add(key);
+    const canonical = byRole.get(key)?.role ?? key;
+    if (seen.has(canonical)) problems.push(`"${key}" appears twice; only one line may set it`);
+    seen.add(canonical);
     if (key === "session hook") {
       if (!HOOK_VALUES.includes(value)) problems.push(`session hook: "${value}" is not on or off`);
       continue;
@@ -126,6 +129,7 @@ export function checkSheet(sheet, { roles, defaults, catalog }) {
 }
 
 function checkTarget({ providerInstanceId, model, options }, catalog) {
+  if (!catalog) return [];
   const at = `${providerInstanceId}/${model}`;
   const provider = catalog.providers.find((p) => p.providerInstanceId === providerInstanceId);
   if (!provider) return [`${at}: no provider instance "${providerInstanceId}" in this T3`];
@@ -153,10 +157,10 @@ if (invoked === fileURLToPath(import.meta.url)) {
     console.error("usage: t3-sheet.mjs <sheet.md> <catalog.json>");
     process.exit(2);
   }
-  const { roles, t3 } = JSON.parse(readFileSync(new URL("../../../models.json", import.meta.url), "utf8"));
+  const { roles, tiers } = JSON.parse(readFileSync(new URL("../../../models.json", import.meta.url), "utf8"));
   const problems = checkSheet(parseSheet(readFileSync(sheetPath, "utf8")), {
-    roles: roles.map((r) => ({ ...r, tier: r.models })),
-    defaults: t3,
+    roles,
+    defaults: tiers,
     catalog: JSON.parse(readFileSync(catalogPath, "utf8")),
   });
   for (const problem of problems) console.log(problem);

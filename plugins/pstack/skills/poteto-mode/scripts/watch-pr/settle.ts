@@ -1,5 +1,4 @@
 import { WatcherQueryError } from "./github.ts";
-import { nullableText, object, text, type LandingRevision } from "./landing.ts";
 import type { WatchClock } from "./policy.ts";
 import type * as T from "./types.ts";
 
@@ -45,10 +44,16 @@ export type ReviewSettle =
       readonly secondsLeft: number;
       readonly heldBy: "activity" | "eyes";
     };
+type Settling = Extract<ReviewSettle, { readonly kind: "settling" }>;
 export type SettleWait = { readonly kind: "review-settling" } & Pick<
-  Extract<ReviewSettle, { readonly kind: "settling" }>,
+  Settling,
   "endsAt" | "heldBy"
 >;
+export interface SettleDecision {
+  readonly kind: "settling";
+  readonly frontier: T.PrContext;
+  readonly settle: Settling;
+}
 
 const seconds = (iso: string): number => Date.parse(iso) / 1_000;
 const iso = (at: number): string => new Date(at * 1_000).toISOString();
@@ -82,6 +87,22 @@ export const REVIEW_ACTIVITY_QUERY = `query ReviewActivity($owner: String!, $rep
     }
   }
 }`;
+
+function invalid(detail: string): never {
+  throw new WatcherQueryError({ kind: "missing-key", retryable: true, detail });
+}
+function object(value: unknown, label: string): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    invalid(`${label} must be an object`);
+  return value as Record<string, unknown>;
+}
+function text(value: unknown, label: string): string {
+  if (typeof value !== "string" || value.length === 0)
+    invalid(`${label} must be a non-empty string`);
+  return value;
+}
+const nullableText = (value: unknown, label: string): string | null =>
+  value === null ? null : text(value, label);
 
 function nodes(connection: unknown, label: string): readonly unknown[] {
   const value = object(connection, label).nodes;
@@ -216,7 +237,7 @@ export function parseHeadPush(
 export async function readReviewActivity(
   runJson: (argv: readonly [string, ...string[]]) => Promise<unknown>,
   context: T.PrContext,
-  headRefOid: string
+  headRefOid: string | null
 ): Promise<ReviewActivity> {
   const { head, ...activity } = parseReviewActivity(
     await runJson([
@@ -233,7 +254,8 @@ export async function readReviewActivity(
       `pr=${context.number}`,
     ])
   );
-  if (head === null) return { ...activity, headPushedAt: null };
+  if (head === null || headRefOid === null)
+    return { ...activity, headPushedAt: null };
   try {
     const log = await runJson([
       "gh",
@@ -310,21 +332,27 @@ export function settleState(args: {
 }
 
 export type ReviewSettler = (
-  head: Pick<LandingRevision, "context" | "headRefOid">
+  head: Pick<T.PullRequestFacts, "context" | "headRefOid">
 ) => Promise<ReviewSettle>;
 
-export function reviewSettler(
-  reader: Pick<T.GitHubReader, "reviewActivity">,
-  clock: Pick<WatchClock, "observedAt">,
-  settle: number
-): ReviewSettler | undefined {
+export function reviewSettler(args: {
+  readonly dependencies: {
+    readonly reader: Pick<T.GitHubReader, "reviewActivity">;
+    readonly clock: Pick<WatchClock, "observedAt">;
+  };
+  readonly mode: T.WatchMode;
+  readonly options: Pick<T.PollingOptions, "settle">;
+}): ReviewSettler | undefined {
+  // A queued stack waits for the merge queue, so it has no READY to hold.
+  const settle = args.mode === "queued-stack" ? 0 : args.options.settle;
   if (settle === 0) return undefined;
+  const { reader, clock } = args.dependencies;
   // Per PR: when this process first saw the head, and the push time once
   // GitHub has given it, so a later read without one cannot move the start.
   const heads = new Map<
     T.PrNumber,
     {
-      readonly headRefOid: string;
+      readonly headRefOid: string | null;
       readonly firstSeen: string;
       readonly pushedAt: string | null;
     }
@@ -353,10 +381,14 @@ export function reviewSettler(
   };
 }
 
-export const settleWait = (settle: ReviewSettle): SettleWait | null =>
-  settle.kind === "settling"
-    ? { kind: "review-settling", endsAt: settle.endsAt, heldBy: settle.heldBy }
-    : null;
+export const waitReason = (decision: T.WaitingDecision | SettleDecision) =>
+  decision.kind === "waiting"
+    ? { kind: "pending-checks" as const, pending: decision.pending }
+    : ({
+        kind: "review-settling",
+        endsAt: decision.settle.endsAt,
+        heldBy: decision.settle.heldBy,
+      } satisfies SettleWait);
 
 const left = (secondsLeft: number): string =>
   secondsLeft < 60 ? `${secondsLeft}s` : `${Math.ceil(secondsLeft / 60)}m`;

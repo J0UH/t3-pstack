@@ -1,117 +1,57 @@
 # t3-pstack
 
-> **J0UH's fork** of [chhoumann/t3-pstack](https://github.com/chhoumann/t3-pstack). Install it from here: `claude plugin marketplace add J0UH/t3-pstack && claude plugin install t3-pstack@t3-pstack` in Claude Code, and `codex plugin marketplace add J0UH/t3-pstack && codex plugin add t3-pstack@t3-pstack` in Codex. chhoumann's changes come in through a remote named `chhoumann` (his README's `upstream` is pstack-claude, which he merges himself). Merge `chhoumann/main` on a branch, check it with `bun tools/generate.mjs --check` and `bun test tests/`, and open a PR here. We keep our own changes small so those merges stay cheap, and our model roles live outside the plugin, in our j0uh-stack setup. Everything below this note is chhoumann's README.
+> **J0UH's fork** of [chhoumann/t3-pstack](https://github.com/chhoumann/t3-pstack). Install and update from here with `npx -y github:J0UH/t3-pstack install --source J0UH/t3-pstack`, which sets up every Claude Code and Codex home T3 runs; `doctor` with the same `--source` checks them. chhoumann's changes come in through a remote named `chhoumann`: merge `chhoumann/main` on a branch, check it with `bun tools/generate.mjs --check` and `bun test tests/`, and open a PR here. We keep our own changes small so those merges stay cheap, and our model roles live outside the plugin, in J0UH/j0uh-stack. Everything below this note is chhoumann's README.
 
-pstack for [T3 Code](https://github.com/pingdotgg/t3code). It is [pstack-claude](https://github.com/michael-denyer/pstack-claude), Michael Denyer's Claude Code and Codex port of Lauren Tan's (poteto's) [pstack](https://github.com/cursor/plugins/tree/main/pstack), with one change: every subagent, panel, fan-out, schedule, and PR watch dispatches through T3's `t3-code` MCP tools. An `interrogate`, `arena`, or `architect` panel can then run Claude, GPT, and Grok reviewers side by side, from a Claude Code thread or a Codex thread. The mapping lives in [`t3-tools.md`](plugins/pstack/skills/poteto-mode/references/t3-tools.md).
+pstack for [T3 Code](https://github.com/pingdotgg/t3code). It is Lauren Tan's (poteto's) [pstack](https://github.com/cursor/plugins/tree/main/pstack), with its Cursor mechanics rewritten in place for T3. Every subagent, panel, fan-out, schedule, and PR watch dispatches through T3's `t3-code` MCP tools, so an `interrogate`, `arena`, or `architect` panel can run Claude, GPT, and Grok reviewers side by side, from a Claude Code thread or a Codex thread.
 
-t3-pstack works only inside T3. Outside T3, use pstack-claude.
+The skill text is Lauren's. A generated set of substitutions rewrites only what names Cursor (its `Task` tool, its model slugs, its `.mdc` rule, its cloud agents, `/loop`), and a few declared forks carry what a substitution cannot. Nothing else needs loading: the T3 rules sit where Lauren's dispatch rules sit.
 
-## Install
+t3-pstack works only inside T3.
 
-| | Claude Code | Codex |
-| --- | --- | --- |
-| Plugin id | `t3-pstack@t3-pstack` | `t3-pstack@t3-pstack` |
-| Marketplace repo | `chhoumann/t3-pstack` | `chhoumann/t3-pstack` |
+## Install, update, and check
 
 ```shell
-claude plugin marketplace add chhoumann/t3-pstack && claude plugin install t3-pstack@t3-pstack
-codex plugin marketplace add chhoumann/t3-pstack && codex plugin add t3-pstack@t3-pstack
+npx -y github:chhoumann/t3-pstack install
+npx -y github:chhoumann/t3-pstack update
+npx -y github:chhoumann/t3-pstack doctor
 ```
 
-Then run `/t3-pstack:setup-pstack` in a T3 thread on each machine. It writes `t3-pstack-models.md` in the host's config directory, with one T3 target per role (`<providerInstanceId>/<modelId>` plus that provider's options), and checks it against the machine's `orchestrator_capabilities`.
+`npx -y github:chhoumann/t3-pstack` runs the installer from the latest commit on `main`. That is the rolling channel, the same one each home's marketplace auto-updates from. To run one release's installer, name its tag, as in `npx -y github:chhoumann/t3-pstack#v2.0.0-rc.15 doctor`.
 
-t3-pstack and pstack-claude never collide. They differ in plugin name (`t3-pstack` and `pstack`), marketplace (`t3-pstack` and `pstack-claude`), skill and agent namespace, and model sheet (`t3-pstack-models.md` and `pstack-models.md`). Both can be installed at once, though each injects its own routing instruction at session start, so enable one per runtime.
+`install` and `update` are the same command, and a second run changes nothing. With Node 20 or later, it installs or updates the `t3-pstack@t3-pstack` plugin in every Claude Code and Codex config home T3 can run: `~/.claude` and `~/.codex`, `$CLAUDE_CONFIG_DIR` and `$CODEX_HOME`, and the home of each `claudeAgent` and `codex` instance in T3's settings, disabled ones included. Name any other home with `--claude-home <dir>` or `--codex-home <dir>`. Each home's `t3-pstack` marketplace must come from `chhoumann/t3-pstack`, or from `--source <owner/repo|git URL|dir>` on the same run, and a home whose marketplace has another source is left as it is. A local directory needs a path such as `./t3-pstack`, since `owner/repo` always means GitHub. On Codex it also trusts t3-pstack's session-start hook, once its hooks file is the one this release pins. Codex runs a plugin's hook only once it is trusted, and T3's Codex sessions never ask, so without this step the hook never runs. Run `update` after each release.
 
-## Staying current
+`doctor` reports on the same homes and changes nothing itself: each marketplace's source, the installed version, whether its files are all there, whether it is enabled, the Codex hook's trust, Claude Code records that pin an old version, plain copies of the plugin's skills, and the model sheet. It exits 1 on any problem and prints a fix for each.
 
-`upstream` is pstack-claude. Merge it with `git merge upstream/main`, then run `bun tools/generate.mjs` and `bun test tests/`. The overlay is mostly new files. The design and the list of upstream files it edits are in [`docs/t3-pstack-design.md`](docs/t3-pstack-design.md).
+Then run `/t3-pstack:setup-pstack` in a T3 thread on each machine. It writes the model sheet, `~/.config/t3-pstack/models.md`, with one T3 target per role (`<providerInstanceId>/<modelId>` plus that provider's options), and checks it against the machine's `orchestrator_capabilities`. Without a sheet, every role runs on the defaults in its skill's Models section.
 
-The sections below are pstack-claude's documentation, kept as upstream writes it. Their install commands install pstack-claude, not t3-pstack.
-
-Tell `poteto-mode` your goal and it will invoke the correct workflow for the task. It keeps your code concise, simple and verified.
-
-For concurrency bugs and invariants that tests cannot reach, see the separate [agent-formal-verify](https://github.com/michael-denyer/agent-formal-verify) plugin, which adds TLA+ model checking and Lean proofs.
-
-## Install
-
-### Claude Code
-
-Run in Claude Code:
-
-```text
-/plugin marketplace add michael-denyer/pstack-claude
-/plugin install pstack@pstack-claude
-```
-
-### Codex
-
-Run in your terminal:
-
-```shell
-codex plugin marketplace add michael-denyer/pstack-claude
-codex plugin add pstack@pstack-claude
-```
-
-### Pi
-
-Run in your terminal:
-
-```shell
-pi install git:github.com/michael-denyer/pstack-claude
-```
-
-The package loads the skills and the pstack Pi extension, which adds the subagent, question, and wake-up tools the skills use, plus `/loop` and the routing instruction. Invoke a skill with `/skill:<name>`.
-
-### GitHub Copilot
-
-Run in your terminal:
-
-```shell
-copilot plugin marketplace add michael-denyer/pstack-claude
-copilot plugin install pstack@pstack-claude
-```
-
-This installs pstack for the Copilot CLI and the GitHub Copilot app, which share `~/.copilot`. Start a new session afterwards. Copilot ships no default pstack models, so the first skill that needs one runs `setup-pstack` to pick from the models your account lists, and later sessions reuse that choice.
-
-The Copilot build is tested on Copilot CLI 1.0.87 through 1.0.92. On those versions the routing hook's context reaches the session alongside other plugins' session-start context. If a later version keeps only one plugin's context, `setup-pstack` offers a [standing instruction](plugins/pstack/skills/setup-pstack/copilot.md#wire-it-in) for `~/.copilot/copilot-instructions.md` instead. On 1.0.92, once the CLI caches its computer-use experiment assignment, `copilot -p` sessions list no plugin skills and a `skill` call returns "Skill not found". Interactive sessions, the hooks, and the agents are unaffected.
-
-Run `setup-pstack` to change model defaults, set a reasoning effort per role (for example `arena runners: opus @xhigh, fable @max`, which Claude Code dispatches through the plugin's `pstack:effort-<level>` or `pstack:poteto-agent-<level>` agents; roles without a level keep the session's effort unless the sheet's `default effort` line names one), or turn automatic routing off. The plugin installs the routing hook on Claude Code, Codex, and GitHub Copilot; Codex asks you to trust it through `/hooks` before it runs. On Pi the extension injects the same routing instruction. In Claude Code and the Copilot CLI, use `/pstack:setup-pstack`.
-
-For Prime Agent, OpenCode, Gemini CLI, or skills-only installs for any harness, see [shared installation](docs/reference.md#shared-skills-installation).
-
-## Getting started
+## Use
 
 ```text
 Use poteto-mode to fix the search filter resetting when I change pages.
 ```
 
-For a bug, it reproduces the failure, uses `how` and `why` to investigate, delegates the fix, then reruns the failing case. If the fix crosses a function boundary, it brings in `architect` before implementation. You receive the fix and the failing and passing evidence.
+The session-start hook tells each new chat when to enter `poteto-mode` on its own: work that touches more than one file, a design choice, or a bug whose cause is unknown. `poteto-mode` matches the task to a playbook and opens the other skills from there. They ship as upstream ships them, invoked by `poteto-mode` or typed by you (`/t3-pstack:<name>` on Claude Code, `$t3-pstack:<name>` on Codex).
 
-[Other playbooks](plugins/pstack/skills/poteto-mode/SKILL.md#playbooks) cover planning, features, refactoring, performance issues, investigations, prototypes, PR maintenance, shipping, and longer projects.
+The plugin carries 64 skill directories, 24 of them `principle-*` leaves, and 4 agents.
 
-![poteto-mode on Claude Code, Codex, and Pi turns a request into verified work. Choose a playbook, plan and delegate with architect, arena, or swarm, then review and verify with interrogate, tests, and measurements. Project playbooks customize the workflow, and setup-pstack configures the model and reasoning effort per role. Supporting skills include how, why, and unslop.](assets/pstack-overview.png)
+## Staying current
 
-## Details
-
-- [Skills and slash commands](docs/reference.md#slash-commands)
-- [Runtime setup](docs/reference.md#runtime-support)
-- [Models and dependencies](docs/reference.md#configuration-and-dependencies)
-- [Maintenance and port scope](docs/reference.md#maintenance)
+This repository syncs from Lauren's tree directly, synced against upstream `88d4751`. `tools/upstream.json` pins each component, `tools/substitutions.json` holds the rewrite rules and a denylist of Cursor terms, and `tools/forks.json` declares every file the port keeps in its own form and why. `bun tools/sync.mjs <component> <sha>` derives each upstream file through the rules, merges it three ways with the port's copy, and fails on an undeclared fork, a denylist hit, or a rule that no longer matches upstream. [CONTRIBUTING.md](CONTRIBUTING.md#the-sync-boundary) has the details.
 
 ## Data handling
 
-pstack has no server or telemetry. Anything its skills ask your agent to read, including session transcripts, goes to your model provider. Scripts run locally, and PR tools use your GitHub CLI login.
+t3-pstack has no server or telemetry. Anything its skills ask your agent to read, including session transcripts, goes to your model provider. Scripts run locally, and PR tools use your GitHub CLI login.
 
 ## Contributing
 
-Thanks for helping make this port better. Bug reports, documentation fixes, and runtime improvements are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the checks and where your change belongs. Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
+Bug reports, documentation fixes, and T3 improvements are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the checks and where your change belongs. Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
 
 ## License
 
 t3-pstack is [MIT-licensed](LICENSE). Its T3 modifications and additions are © 2026 Christian Bager Bach Houmann. It builds on:
 
-- [pstack-claude](https://github.com/michael-denyer/pstack-claude), MIT, © 2026 Michael Denyer, the Claude Code, Codex, and Pi port this fork tracks.
-- [pstack](https://github.com/cursor/plugins/tree/main/pstack) in cursor/plugins, MIT, © 2026 Lauren Tan (poteto), the original skill stack.
+- [pstack](https://github.com/cursor/plugins/tree/main/pstack) in cursor/plugins, MIT, © 2026 Lauren Tan (poteto), the skill stack itself.
+- [pstack-claude](https://github.com/michael-denyer/pstack-claude), MIT, © 2026 Michael Denyer, whose sync, generator, and validation tooling and transcript finder this port still uses.
 - The skills imported from [cursor-team-kit](https://github.com/cursor/plugins/tree/main/cursor-team-kit), MIT, © 2026 Cursor. See [LICENSE-cursor-team-kit](LICENSE-cursor-team-kit).
 - The skills and review agents imported from [thermos](https://github.com/cursor/plugins/tree/main/thermos), MIT, © 2026 Cursor. See [LICENSE-thermos](LICENSE-thermos).
 

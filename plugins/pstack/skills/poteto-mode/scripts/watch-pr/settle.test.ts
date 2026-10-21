@@ -1,7 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import { main } from "./cli.ts";
-import { WatchDeadline } from "./deadline.ts";
-import { fakeReader, type FakeReaderOptions } from "./fakes.test-helper.ts";
+import {
+  fakeReader,
+  pendingCheck,
+  type FakeReaderOptions,
+} from "./fakes.test-helper.ts";
 import { WatcherQueryError } from "./github.ts";
 import { runSimple } from "./policy.ts";
 import { renderPretty } from "./render.ts";
@@ -15,6 +18,7 @@ import {
 } from "./settle.ts";
 import type {
   GitHubReader,
+  PrContext,
   ProgressVerdict,
   TerminalVerdict,
 } from "./types.ts";
@@ -73,7 +77,6 @@ async function watch(
   const verdict = await runSimple({
     dependencies: {
       reader,
-      deadline: new WatchDeadline(options.timeout ?? 7_200, () => now),
       clock: {
         now: () => now,
         observedAt: () => new Date(now * 1_000).toISOString(),
@@ -217,6 +220,60 @@ describe("review settle window", () => {
     expect(after).toBe(390);
   });
 
+  it("waits on the lowest settling PR of a stack before an upstack PR's pending checks", async () => {
+    const emitted: ProgressVerdict[] = [];
+    const base = fakeReader();
+    const reader = {
+      ...base,
+      async checksFastPath(pr: PrContext) {
+        return pr.number === 2
+          ? { kind: "checks" as const, checks: [pendingCheck()] }
+          : base.checksFastPath(pr);
+      },
+      async reviewActivity(): Promise<ReviewActivity> {
+        return {
+          authorLogin: "author",
+          viewerLogin: "viewer",
+          openedAt: at(-3_600),
+          readyAt: null,
+          headPushedAt: at(0),
+          items: [bot(40)],
+        };
+      },
+    } satisfies GitHubReader;
+    await expect(
+      runSimple({
+        dependencies: {
+          reader,
+          clock: {
+            now: () => 0,
+            observedAt: () => at(100),
+            async sleep() {
+              throw new Error("stop after the first wait");
+            },
+          },
+          emit: (verdict) => emitted.push(verdict),
+        },
+        contexts: [context, { ...context, number: parsePrNumber(2) }],
+        mode: "stack",
+        statusOnly: false,
+        options: {
+          interval: 60,
+          sweepInterval: 300,
+          timeout: 0,
+          maxQueryErrors: 5,
+          allowDraft: false,
+          settle: 300,
+        },
+      })
+    ).rejects.toThrow("stop after the first wait");
+    expect(emitted.at(-1)).toMatchObject({
+      kind: "WAITING",
+      frontier: { number: 1 },
+      reason: { kind: "review-settling", heldBy: "activity", endsAt: at(340) },
+    });
+  });
+
   it("renders a review-settling wait with the time left", () => {
     expect(
       renderPretty({
@@ -251,7 +308,6 @@ describe("review settle window", () => {
 function cliRuntime(reader: GitHubReader, stdout: string[]) {
   return {
     reader,
-    deadline: new WatchDeadline(0, () => 0),
     clock: {
       now: () => 0,
       observedAt: () => at(100),
