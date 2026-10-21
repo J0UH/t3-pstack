@@ -1165,12 +1165,16 @@ function branchPullRequest({
       `branch ${branch} has no pull request; open one with ${forge} pr create, or resolve the frontier from a branch whose chain is fully submitted`
     );
   }
-  if (rows.length > 1) {
+  // A reused branch keeps its merged and closed PRs, so an open PR is the
+  // branch's current one.
+  const open = rows.filter((item) => item.state === "OPEN");
+  const current = open.length > 0 ? open : rows;
+  if (current.length > 1) {
     throw new UserError(
-      `branch ${branch} has multiple pull requests (${rows.map((item) => `#${item.pr}`).join(", ")}); close the stale ones first`
+      `branch ${branch} has multiple pull requests (${current.map((item) => `#${item.pr}`).join(", ")}); close the stale ones first`
     );
   }
-  return row;
+  return current[0];
 }
 
 function openChildren({

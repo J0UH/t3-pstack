@@ -627,6 +627,65 @@ describe("Store", () => {
       });
     });
 
+    it(`resolves a ${forge} branch reused after a merged and a closed PR to its open PR`, async () => {
+      const { directory, store } = await initializedStore();
+      const stack = await makeGitStack(directory);
+
+      await withFakeForge({
+        directory,
+        forge,
+        currentRows: forgeRows(forge, [
+          {
+            number: 11,
+            state: "open",
+            head: "stack/open",
+            base: "stack/closed",
+          },
+          { number: 9, state: "closed", head: "stack/open", base: "main" },
+          { number: 8, state: "merged", head: "stack/open", base: "main" },
+        ]),
+        operation: async () => {
+          expect(
+            (await store.frontier.set({ repo: stack.repo, forge })).prs.map(
+              (row) => row.pr
+            )
+          ).toEqual([10, 13, 11, 14]);
+        },
+      });
+    });
+
+    it(`rejects a ${forge} branch with more than one open PR`, async () => {
+      const { directory, store } = await initializedStore();
+      const stack = await makeGitStack(directory);
+
+      await withFakeForge({
+        directory,
+        forge,
+        currentRows: forgeRows(forge, [
+          {
+            number: 12,
+            state: "draft",
+            head: "stack/open",
+            base: "stack/closed",
+          },
+          {
+            number: 11,
+            state: "open",
+            head: "stack/open",
+            base: "stack/closed",
+          },
+          { number: 9, state: "closed", head: "stack/open", base: "main" },
+        ]),
+        operation: async () => {
+          await expect(
+            store.frontier.set({ repo: stack.repo, forge })
+          ).rejects.toThrow(
+            "branch stack/open has multiple pull requests (#12, #11); close the stale ones first"
+          );
+        },
+      });
+    });
+
     it(`rejects unparseable ${forge} output loudly`, async () => {
       const { directory, store } = await initializedStore();
       const stack = await makeGitStack(directory);
