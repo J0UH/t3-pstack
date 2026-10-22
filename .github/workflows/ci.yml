@@ -127,6 +127,22 @@ jobs:
       - name: Check formatting
         run: bunx prettier@3.6.2 --check watch-pr/settle.ts watch-pr/settle.test.ts watch-pr/verdicts.test.ts resolve-codex-transcript.ts
 
+  # The same step as upstream's validate-plugins.yml, on the Node it uses,
+  # which is also the oldest the installer accepts. The runner has no TLC, so
+  # the statechart tests that need it skip.
+  skill-scripts:
+    name: Skill script tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "20"
+      - name: Test skill scripts
+        run: node --test plugins/pstack/skills/*/scripts/test/*.test.mjs
+
   shellcheck:
     name: Shell scripts
     runs-on: ubuntu-latest
