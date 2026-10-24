@@ -539,7 +539,7 @@ async function pollUntilTerminal<V>(args: {
             exitCode: 5,
             reason,
           });
-        await args.dependencies.clock.sleep(args.options.interval);
+        await sleep(args.options.interval);
         continue;
       }
       if (!(error instanceof WatcherQueryError)) throw error;
