@@ -421,8 +421,8 @@
     {
       "files": "^skills/reflect/SKILL\\.md$",
       "pattern": "Never edit a skill under `plugins/cache/`. Before approval, show its destination, `.cursor/skills/<skill>/` or `~/.cursor/skills/<skill>/`.",
-      "replacement": "Never edit a skill under `plugins/cache/`, where the harness keeps installed plugins, such as `~/.claude/plugins/cache/` on Claude Code and `${CODEX_HOME:-~/.codex}/plugins/cache/` on Codex. Before approval, show its destination in the project's or the user's skills directory, `.claude/skills/<skill>/` or `~/.claude/skills/<skill>/` on Claude Code, or `.agents/skills/<skill>/` or `~/.agents/skills/<skill>/` on Codex.",
-      "rationale": "harness skill dirs and plugin caches. Claude Code installs this plugin under ~/.claude/plugins/cache/ and Codex under $CODEX_HOME/plugins/cache/, and Codex 0.164 reads user skills from ~/.agents/skills and project skills from .agents/skills, not from .claude/skills"
+      "replacement": "Never edit a skill under `plugins/cache/`, where the harness keeps installed plugins, such as `${CLAUDE_CONFIG_DIR:-~/.claude}/plugins/cache/` on Claude Code and `${CODEX_HOME:-~/.codex}/plugins/cache/` on Codex. Before approval, show its destination in the project's or the user's skills directory, `.claude/skills/<skill>/` or `~/.claude/skills/<skill>/` on Claude Code, or `.agents/skills/<skill>/` or `~/.agents/skills/<skill>/` on Codex.",
+      "rationale": "harness skill dirs and plugin caches. Claude Code installs this plugin under $CLAUDE_CONFIG_DIR/plugins/cache/ (default ~/.claude) and Codex under $CODEX_HOME/plugins/cache/, and Codex 0.164 reads user skills from ~/.agents/skills and project skills from .agents/skills, not from .claude/skills"
     },
     {
       "pattern": "(under `.cursor/skills/`, `~/.cursor/skills/`, or `~/.cursor/plugins/`), a `Task` prompt naming its path,",
