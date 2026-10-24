@@ -151,6 +151,12 @@
       "rationale": "Per-skill notes: ketchup"
     },
     {
+      "files": "^skills/ketchup-video/SKILL\\.md$",
+      "pattern": "The reply is ketchup's opening sentence, the embedded video, one line naming any work left that you can do yourself, and the action items.",
+      "replacement": "The reply is ketchup's opening sentence, the embedded video, one line naming any work left that you can do yourself, and the action items. Embed the video as a Markdown image whose target is the video's absolute path, which T3 shows as a player.",
+      "rationale": "T3 renders a Markdown image whose path ends in a video extension as an inline player, so the reply embeds the video that way"
+    },
+    {
       "pattern": "Bundled skills live at `../<name>/SKILL.md` from this file, so put this file's absolute path in every `poteto-agent` prompt.",
       "files": "^skills/poteto-mode/SKILL\\.md$",
       "replacement": "Bundled skills live at `../<name>/SKILL.md` from this file, so put this file's absolute path in every `poteto-agent` prompt.\n\nOn Codex, read this file whole before acting, in a shell call of its own with `max_output_tokens: 10000`. A smaller output budget cuts lines out of its middle. If a read of it shows `tokens truncated`, read it again that way.",
@@ -413,6 +419,12 @@
       "rationale": "Per-skill notes: reflect"
     },
     {
+      "files": "^skills/reflect/SKILL\\.md$",
+      "pattern": "Never edit a skill under `plugins/cache/`. Before approval, show its destination, `.cursor/skills/<skill>/` or `~/.cursor/skills/<skill>/`.",
+      "replacement": "Never edit a skill under `plugins/cache/`, where the harness keeps installed plugins, such as `${CLAUDE_CONFIG_DIR:-~/.claude}/plugins/cache/` on Claude Code and `${CODEX_HOME:-~/.codex}/plugins/cache/` on Codex. Before approval, show its destination in the project's or the user's skills directory, `.claude/skills/<skill>/` or `${CLAUDE_CONFIG_DIR:-~/.claude}/skills/<skill>/` on Claude Code, or `.agents/skills/<skill>/` or `~/.agents/skills/<skill>/` on Codex.",
+      "rationale": "harness skill dirs and plugin caches. Claude Code installs this plugin under $CLAUDE_CONFIG_DIR/plugins/cache/ (default ~/.claude) and Codex under $CODEX_HOME/plugins/cache/, Claude Code 2.1.310 reads user skills from $CLAUDE_CONFIG_DIR/skills (default ~/.claude/skills) and project skills from .claude/skills, and Codex 0.164 reads user skills from ~/.agents/skills and project skills from .agents/skills, not from .claude/skills"
+    },
+    {
       "pattern": "(under `.cursor/skills/`, `~/.cursor/skills/`, or `~/.cursor/plugins/`), a `Task` prompt naming its path,",
       "replacement": "(under a project or user skills directory such as `.claude/skills/` or `.agents/skills/`, or a plugin directory), a `delegate_task` brief naming its path,",
       "rationale": "harness skill dirs; Tool actions: Dispatch"
@@ -469,8 +481,8 @@
       "rationale": "The sheet"
     },
     {
-      "pattern": "Spawn all N workers in one message with `subagent_type: generalPurpose`, `environment: \"cloud\"`, `run_in_background: true`, and the step 4 model, left unset for `auto` or `inherit-parent`. Use `environment: \"local\"` only when the worker needs access to something on the user's computer.",
-      "replacement": "Spawn all N workers in one response as `delegate_task` calls with `mode: \"async\"` and the step 4 `target`, left unset for `auto` or `inherit-parent`. Every worker runs on this machine, so a worker that writes gets its own git worktree, named by absolute path in its brief as the only place it writes.",
+      "pattern": "Spawn all N workers in one message with `subagent_type: generalPurpose`, `environment: \"cloud\"`, `run_in_background: true`, and the step 3 model, left unset for `auto` or `inherit-parent`. Use `environment: \"local\"` only when the worker needs access to something on the user's computer.",
+      "replacement": "Spawn all N workers in one response as `delegate_task` calls with `mode: \"async\"` and the step 3 `target`, left unset for `auto` or `inherit-parent`. Every worker runs on this machine, so a worker that writes gets its own git worktree, named by absolute path in its brief as the only place it writes.",
       "rationale": "Per-skill notes: swarm"
     },
     {

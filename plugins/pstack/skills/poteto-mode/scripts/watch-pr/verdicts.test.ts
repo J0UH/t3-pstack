@@ -370,6 +370,22 @@ describe("a frontier with clean CI that reads BLOCKED for a moment", () => {
     ]);
   });
 
+  it("stops confirming at the deadline instead of sleeping past it", async () => {
+    const watch = tickingRuntime();
+    expect(
+      await main(
+        [...single, "--timeout", "30"],
+        watch.runtime(pollsReader(watch.now, [blocked, blocked]))
+      )
+    ).toBe(5);
+    expect(watch.verdicts()).toMatchObject([
+      { kind: "WAITING", reason: { kind: "confirming-block" } },
+      { kind: "WAITING", reason: { kind: "confirming-block" } },
+      { kind: "TIMEOUT", exitCode: 5, reason: { kind: "confirming-block" } },
+    ]);
+    expect(watch.now()).toBe(30);
+  });
+
   it("does not count BLOCKED reads while a check is pending", async () => {
     const pending = {
       ...blocked,
