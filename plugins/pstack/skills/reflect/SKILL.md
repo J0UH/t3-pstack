@@ -20,7 +20,7 @@ On Claude Code, run the finder with this session's ID, this project's transcript
 node "<plugin root>/skills/reflect/scripts/find-transcript.mjs" --session "$CLAUDE_CODE_SESSION_ID" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/<encoded-cwd>" "<opening prompt fragment>"
 ```
 
-`<plugin root>` is the directory that holds this plugin's `skills/`, and `<encoded-cwd>` is the working directory with each `/` and `.` turned into `-`. With the session ID set, the finder prints this session's own transcript, and exits 1 when it does not exist, because a scan could return a sibling session that shares the opening prompt. Without it, the finder scans the flat, nested, and subagent layouts newest first and prints the first transcript whose opening typed prompt carries the fragment. Do not reimplement the scan by hand.
+`<plugin root>` is the directory that holds this plugin's `skills/`, and `<encoded-cwd>` is what `node -p 'process.cwd().normalize("NFC").replace(/[^a-zA-Z0-9]/g, "-")'` prints in the directory Claude Code started in, which is that directory's physical path with every character other than an ASCII letter or digit turned into `-`. If the result is longer than 200 characters, Claude Code keeps the first 200 and appends `-` and a hash, so use the folder under `projects/` whose name starts with those 200 characters and that holds this session's transcript. With the session ID set, the finder prints this session's own transcript, and exits 1 when it does not exist, because a scan could return a sibling session that shares the opening prompt. Without it, the finder scans the flat, nested, and subagent layouts newest first and prints the first transcript whose opening typed prompt carries the fragment. Do not reimplement the scan by hand.
 
 On Codex, pass this thread's ID, which Codex exports as `CODEX_THREAD_ID`, to the resolver, and never search by chat title or time:
 
@@ -57,6 +57,8 @@ Move any Accepted item that a lint rule, script, metadata flag, or runtime check
 Present the synthesizer's full Accepted / Rejected / Backlog output and wait for explicit approval before applying any Accepted edit. The user picks the subset and may redirect routings. Skill changes affect every future agent in the org. Do not auto-apply.
 
 File each Backlog item to your team's devex or backlog tracker without waiting. Only the Accepted list waits for approval.
+
+Never edit a skill under `plugins/cache/`, where the harness keeps installed plugins, such as `${CLAUDE_CONFIG_DIR:-~/.claude}/plugins/cache/` on Claude Code and `${CODEX_HOME:-~/.codex}/plugins/cache/` on Codex. Before approval, show its destination in the project's or the user's skills directory, `.claude/skills/<skill>/` or `${CLAUDE_CONFIG_DIR:-~/.claude}/skills/<skill>/` on Claude Code, or `.agents/skills/<skill>/` or `~/.agents/skills/<skill>/` on Codex. After approval, copy the skill folder there and edit the copy. Never open a PR or push.
 
 Follow each approved row's Routing exactly:
 
