@@ -19,12 +19,12 @@ Open a todolist with one entry per phase before launching anything.
 
 1. State the done predicate and the artifact or report the swarm must return.
 2. Choose the shape. Partition into slices, race N workers on identical briefs, or mix both. For a race or mixed shape, declare `first pass`, `rank all`, or `best-of` before spawning.
-4. Pick the worker model from the `swarm workers` line in the model sheet. If the sheet or that line is missing, use the default in [Models](#models). For `auto` or `inherit-parent`, omit `target` so the workers run on the parent model. If `delegate_task` rejects an entry, use the default and say so. If it rejects the default, use another target of the same family from `orchestrator_capabilities`. For a model race, name each arm's model up front. Pick each subagent's reasoning level and fast or standard speed for the job, per the Subagents section of the **poteto-mode** skill.
-5. Give each worker its own writable output when it writes. When workers verify or measure commits, each brief names the exact SHAs. A measurement brief also names the method (sample count, what one sample is, order). The worker records both in its result.
+3. Pick the worker model from the `swarm workers` line in the model sheet. If the sheet or that line is missing, use the default in [Models](#models). For `auto` or `inherit-parent`, omit `target` so the workers run on the parent model. If `delegate_task` rejects an entry, use the default and say so. If it rejects the default, use another target of the same family from `orchestrator_capabilities`. For a model race, name each arm's model up front. Pick each subagent's reasoning level and fast or standard speed for the job, per the Subagents section of the **poteto-mode** skill.
+4. Give each worker its own writable output when it writes. When workers verify or measure commits, each brief names the exact SHAs. A measurement brief also names the method (sample count, what one sample is, order). The worker records both in its result.
 
 ## Phase B: Fan out
 
-Spawn all N workers in one response as `delegate_task` calls with `mode: "async"` and the step 4 `target`, left unset for `auto` or `inherit-parent`. Every worker runs on this machine, so a worker that writes gets its own git worktree, named by absolute path in its brief as the only place it writes.
+Spawn all N workers in one response as `delegate_task` calls with `mode: "async"` and the step 3 `target`, left unset for `auto` or `inherit-parent`. Every worker runs on this machine, so a worker that writes gets its own git worktree, named by absolute path in its brief as the only place it writes.
 
 When a worker must start from a non-default branch, create its worktree from that branch.
 
@@ -38,7 +38,7 @@ Read the terminal results. Drop a result that does not record the SHAs and metho
 
 ## Phase D: Report
 
-Return one consolidated in-chat report with the table, issue one-liners, gaps or dropouts, and the race rule when used.
+Return one consolidated in-chat report with a result table, issue one-liners, gaps or dropouts, and the race rule when used.
 
 ## Models
 

@@ -151,6 +151,12 @@
       "rationale": "Per-skill notes: ketchup"
     },
     {
+      "files": "^skills/ketchup-video/SKILL\\.md$",
+      "pattern": "The reply is ketchup's opening sentence, the embedded video, one line naming any work left that you can do yourself, and the action items.",
+      "replacement": "The reply is ketchup's opening sentence, the embedded video, one line naming any work left that you can do yourself, and the action items. Embed the video as a Markdown image whose target is the video's absolute path, which T3 shows as a player.",
+      "rationale": "T3 renders a Markdown image whose path ends in a video extension as an inline player, so the reply embeds the video that way"
+    },
+    {
       "pattern": "Bundled skills live at `../<name>/SKILL.md` from this file, so put this file's absolute path in every `poteto-agent` prompt.",
       "files": "^skills/poteto-mode/SKILL\\.md$",
       "replacement": "Bundled skills live at `../<name>/SKILL.md` from this file, so put this file's absolute path in every `poteto-agent` prompt.\n\nOn Codex, read this file whole before acting, in a shell call of its own with `max_output_tokens: 10000`. A smaller output budget cuts lines out of its middle. If a read of it shows `tokens truncated`, read it again that way.",
@@ -389,7 +395,7 @@
     },
     {
       "pattern": "```bash\nls -t <agent-transcripts>/*.jsonl <agent-transcripts>/*/*.jsonl <agent-transcripts>/*/subagents/*.jsonl 2>/dev/null | head -10\n```\n\nThat covers the legacy flat (`<id>.jsonl`), current nested (`<id>/<id>.jsonl`), and subagent (`<parent>/subagents/<child>.jsonl`) layouts. For each candidate, read the first JSONL line. Take the file whose `message.content[0].text` contains the conversation's opening user prompt. If none matches, pass a tight digest of the session instead.",
-      "replacement": "On Claude Code, run the finder with this session's ID, this project's transcripts directory, and a fragment of the conversation's opening user prompt:\n\n```bash\nnode \"<plugin root>/skills/reflect/scripts/find-transcript.mjs\" --session \"$CLAUDE_CODE_SESSION_ID\" \"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/<encoded-cwd>\" \"<opening prompt fragment>\"\n```\n\n`<plugin root>` is the directory that holds this plugin's `skills/`, and `<encoded-cwd>` is the working directory with each `/` and `.` turned into `-`. With the session ID set, the finder prints this session's own transcript, and exits 1 when it does not exist, because a scan could return a sibling session that shares the opening prompt. Without it, the finder scans the flat, nested, and subagent layouts newest first and prints the first transcript whose opening typed prompt carries the fragment. Do not reimplement the scan by hand.\n\nOn Codex, pass this thread's ID, which Codex exports as `CODEX_THREAD_ID`, to the resolver, and never search by chat title or time:\n\n```bash\n\"<plugin root>/skills/poteto-mode/scripts/resolve-codex-transcript\" \"$CODEX_THREAD_ID\"\n```\n\nOn success it exits 0 and prints JSON whose `path` is the transcript. If either command exits non-zero, pass a tight digest of the session instead.",
+      "replacement": "On Claude Code, run the finder with this session's ID, this project's transcripts directory, and a fragment of the conversation's opening user prompt:\n\n```bash\nnode \"<plugin root>/skills/reflect/scripts/find-transcript.mjs\" --session \"$CLAUDE_CODE_SESSION_ID\" \"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/<encoded-cwd>\" \"<opening prompt fragment>\"\n```\n\n`<plugin root>` is the directory that holds this plugin's `skills/`, and `<encoded-cwd>` is what `node -p 'process.cwd().normalize(\"NFC\").replace(/[^a-zA-Z0-9]/g, \"-\")'` prints in the directory Claude Code started in, which is that directory's physical path with every character other than an ASCII letter or digit turned into `-`. If the result is longer than 200 characters, Claude Code keeps the first 200 and appends `-` and a hash, so use the folder under `projects/` whose name starts with those 200 characters and that holds this session's transcript. With the session ID set, the finder prints this session's own transcript, and exits 1 when it does not exist, because a scan could return a sibling session that shares the opening prompt. Without it, the finder scans the flat, nested, and subagent layouts newest first and prints the first transcript whose opening typed prompt carries the fragment. Do not reimplement the scan by hand.\n\nOn Codex, pass this thread's ID, which Codex exports as `CODEX_THREAD_ID`, to the resolver, and never search by chat title or time:\n\n```bash\n\"<plugin root>/skills/poteto-mode/scripts/resolve-codex-transcript\" \"$CODEX_THREAD_ID\"\n```\n\nOn success it exits 0 and prints JSON whose `path` is the transcript. If either command exits non-zero, pass a tight digest of the session instead.",
       "rationale": "Transcripts (t3-pstack 1.0.13: find-transcript.mjs on Claude Code, resolve-codex-transcript on Codex)"
     },
     {
@@ -411,6 +417,12 @@
       "regex": "One `Task` call, `subagent_type: generalPurpose`, `model` from the `reflect judgment, divergent, synthesizer` line \\(default `(?:claude|gpt|grok|gemini|composer)-[^`]+`\\), agent mode \\(`readonly: false`\\)\\. It spot-verifies citations through MCP, and readonly strips MCPs\\.",
       "replacement": "One `delegate_task` call with full tool access and `target` from the `reflect judgment, divergent, synthesizer` line (default in [Models](#models)). It spot-verifies citations through MCP.",
       "rationale": "Per-skill notes: reflect"
+    },
+    {
+      "files": "^skills/reflect/SKILL\\.md$",
+      "pattern": "Never edit a skill under `plugins/cache/`. Before approval, show its destination, `.cursor/skills/<skill>/` or `~/.cursor/skills/<skill>/`.",
+      "replacement": "Never edit a skill under `plugins/cache/`, where the harness keeps installed plugins, such as `${CLAUDE_CONFIG_DIR:-~/.claude}/plugins/cache/` on Claude Code and `${CODEX_HOME:-~/.codex}/plugins/cache/` on Codex. Before approval, show its destination in the project's or the user's skills directory, `.claude/skills/<skill>/` or `${CLAUDE_CONFIG_DIR:-~/.claude}/skills/<skill>/` on Claude Code, or `.agents/skills/<skill>/` or `~/.agents/skills/<skill>/` on Codex.",
+      "rationale": "harness skill dirs and plugin caches. Claude Code installs this plugin under $CLAUDE_CONFIG_DIR/plugins/cache/ (default ~/.claude) and Codex under $CODEX_HOME/plugins/cache/, Claude Code 2.1.310 reads user skills from $CLAUDE_CONFIG_DIR/skills (default ~/.claude/skills) and project skills from .claude/skills, and Codex 0.164 reads user skills from ~/.agents/skills and project skills from .agents/skills, not from .claude/skills"
     },
     {
       "pattern": "(under `.cursor/skills/`, `~/.cursor/skills/`, or `~/.cursor/plugins/`), a `Task` prompt naming its path,",
@@ -469,8 +481,8 @@
       "rationale": "The sheet"
     },
     {
-      "pattern": "Spawn all N workers in one message with `subagent_type: generalPurpose`, `environment: \"cloud\"`, `run_in_background: true`, and the step 4 model, left unset for `auto` or `inherit-parent`. Use `environment: \"local\"` only when the worker needs access to something on the user's computer.",
-      "replacement": "Spawn all N workers in one response as `delegate_task` calls with `mode: \"async\"` and the step 4 `target`, left unset for `auto` or `inherit-parent`. Every worker runs on this machine, so a worker that writes gets its own git worktree, named by absolute path in its brief as the only place it writes.",
+      "pattern": "Spawn all N workers in one message with `subagent_type: generalPurpose`, `environment: \"cloud\"`, `run_in_background: true`, and the step 3 model, left unset for `auto` or `inherit-parent`. Use `environment: \"local\"` only when the worker needs access to something on the user's computer.",
+      "replacement": "Spawn all N workers in one response as `delegate_task` calls with `mode: \"async\"` and the step 3 `target`, left unset for `auto` or `inherit-parent`. Every worker runs on this machine, so a worker that writes gets its own git worktree, named by absolute path in its brief as the only place it writes.",
       "rationale": "Per-skill notes: swarm"
     },
     {
