@@ -65,6 +65,13 @@ export const PORTABLE_ASSETS = [
   { source: "NOTICE-skills.md", target: "NOTICE.md" },
 ];
 
+// Codex puts every plugin skill in the model's context unless the skill's
+// agents/openai.yaml turns implicit invocation off. J0UH runs pstack opt-in, so
+// each skill starts only when the user names it ($t3-pstack:<name>). This is the
+// Codex side of Claude Code's deny rule on Skill(t3-pstack:*), which j0uh-stack
+// installs.
+export const CODEX_SKILL_POLICY = "policy:\n  allow_implicit_invocation: false\n";
+
 // The generator removes every entry of these directories that no planned path
 // runs through, so no hand-written file may live in one.
 export const OWNED_DIRS = [LICENSES];
@@ -477,6 +484,9 @@ export function plan(root, models) {
       throw new Error(`${source} resolves outside the repository through a symlink`);
     }
     files[`${LICENSES}/${target}`] = read(source);
+  }
+  for (const name of readdirSync(join(root, SKILLS)).sort()) {
+    if (existsSync(join(root, SKILLS, name, "SKILL.md"))) files[`${SKILLS}/${name}/agents/openai.yaml`] = CODEX_SKILL_POLICY;
   }
   return { files, ownedDirs: OWNED_DIRS };
 }
